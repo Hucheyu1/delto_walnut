@@ -1,135 +1,119 @@
-# Template for Isaac Lab Projects
+# Delto Walnut HCY
 
-## Overview
+这是一个基于 Isaac Lab 的强化学习项目，用于训练五指机械手在物理仿真中操控两颗小球，并尽量保持两球围绕指定轴线稳定旋转。项目采用 Isaac Lab 的 `DirectRLEnv` 接口实现环境，使用 RSL-RL 的 PPO 作为默认训练算法。
 
-This project/repository serves as a template for building projects or extensions based on Isaac Lab.
-It allows you to develop in an isolated environment, outside of the core Isaac Lab repository.
-
-**Key Features:**
-
-- `Isolation` Work outside the core Isaac Lab repository, ensuring that your development efforts remain self-contained.
-- `Flexibility` This template is set up to allow your code to be run as an extension in Omniverse.
-
-**Keywords:** extension, template, isaaclab
-
-## Installation
-
-- Install Isaac Lab by following the [installation guide](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html).
-  We recommend using the conda installation as it simplifies calling Python scripts from the terminal.
-
-- Clone or copy this project/repository separately from the Isaac Lab installation (i.e. outside the `IsaacLab` directory):
-
-- Using a python interpreter that has Isaac Lab installed, install the library in editable mode using:
-
-    ```bash
-    # use 'PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
-    python -m pip install -e source/delto_walnut_hcy
-
-- Verify that the extension is correctly installed by:
-
-    - Listing the available tasks:
-
-        Note: It the task name changes, it may be necessary to update the search pattern `"Template-"`
-        (in the `scripts/list_envs.py` file) so that it can be listed.
-
-        ```bash
-        # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
-        python scripts/list_envs.py
-        ```
-
-    - Running a task:
-
-        ```bash
-        # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
-        python scripts/<RL_LIBRARY>/train.py --task=<TASK_NAME>
-        ```
-
-    - Running a task with dummy agents:
-
-        These include dummy agents that output zero or random agents. They are useful to ensure that the environments are configured correctly.
-
-        - Zero-action agent
-
-            ```bash
-            # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
-            python scripts/zero_agent.py --task=<TASK_NAME>
-            ```
-        - Random-action agent
-
-            ```bash
-            # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
-            python scripts/random_agent.py --task=<TASK_NAME>
-            ```
-
-### Set up IDE (Optional)
-
-To setup the IDE, please follow these instructions:
-
-- Run VSCode Tasks, by pressing `Ctrl+Shift+P`, selecting `Tasks: Run Task` and running the `setup_python_env` in the drop down menu.
-  When running this task, you will be prompted to add the absolute path to your Isaac Sim installation.
-
-If everything executes correctly, it should create a file .python.env in the `.vscode` directory.
-The file contains the python paths to all the extensions provided by Isaac Sim and Omniverse.
-This helps in indexing all the python modules for intelligent suggestions while writing code.
-
-### Setup as Omniverse Extension (Optional)
-
-We provide an example UI extension that will load upon enabling your extension defined in `source/delto_walnut_hcy/delto_walnut_hcy/ui_extension_example.py`.
-
-To enable your extension, follow these steps:
-
-1. **Add the search path of this project/repository** to the extension manager:
-    - Navigate to the extension manager using `Window` -> `Extensions`.
-    - Click on the **Hamburger Icon**, then go to `Settings`.
-    - In the `Extension Search Paths`, enter the absolute path to the `source` directory of this project/repository.
-    - If not already present, in the `Extension Search Paths`, enter the path that leads to Isaac Lab's extension directory directory (`IsaacLab/source`)
-    - Click on the **Hamburger Icon**, then click `Refresh`.
-
-2. **Search and enable your extension**:
-    - Find your extension under the `Third Party` category.
-    - Toggle it to enable your extension.
-
-## Code formatting
-
-We have a pre-commit template to automatically format your code.
-To install pre-commit:
+当前注册的 Gym 任务名是：
 
 ```bash
-pip install pre-commit
+Template-Delto-Walnut-Direct-v0
 ```
 
-Then you can run pre-commit with:
+## 项目结构
+
+```text
+.
+├── README.md
+├── scripts/
+│   ├── list_envs.py              # 列出已注册任务
+│   ├── zero_agent.py             # 零动作调试代理
+│   ├── random_agent.py           # 随机动作调试代理
+│   └── rsl_rl/
+│       ├── train.py              # RSL-RL 训练入口
+│       ├── play.py               # checkpoint 播放与策略导出入口
+│       └── cli_args.py           # RSL-RL 命令行参数
+└── source/delto_walnut_hcy/
+    ├── config/extension.toml      # Isaac Lab / Omniverse 扩展配置
+    ├── setup.py                   # Python 包安装配置
+    └── delto_walnut_hcy/
+        └── tasks/direct/delto_walnut_hcy/
+            ├── __init__.py
+            ├── delto_cfg.py                  # 五指手 USD 与执行器配置
+            ├── delto_walnut_hcy_env_cfg.py   # 环境、场景、观测/动作空间配置
+            ├── delto_walnut_hcy_env.py       # Direct RL 环境实现
+            ├── agents/rsl_rl_ppo_cfg.py      # PPO 默认超参数
+            └── robots/dg5f_right.usd         # 机械手资产
+```
+
+## 环境概览
+
+- 机器人：`dg5f_right.usd` 五指机械手。
+- 操作对象：两个红色球体，默认半径 `0.02 m`，质量 `0.02 kg`。
+- 并行环境数：默认 `512`。
+- 动作空间：`20` 维，对应 20 个手部关节的增量位置控制。
+- 观测空间：`79` 维，包含关节位置/速度、两球位置/速度、上一步动作、旋转轴、旋转中心和球半径。
+- 仿真步长：`1 / 120 s`，默认 `decimation = 4`。
+- 单回合时长：默认 `10 s`。
+- 终止条件：任意球体高度低于 `drop_height_threshold = 0.1`。
+
+奖励主要约束两球的旋转半径、中心对称性、切向速度、绕轴方向、角速度、掉落惩罚、动作平滑、力矩和指间碰撞。环境中启用了课程学习，默认在第 `500` 到 `1000` 个 RSL-RL iteration 之间逐步加入动作质量与碰撞相关约束。
+
+## 依赖
+
+请先安装 Isaac Sim 与 Isaac Lab
+
+建议环境：
+- Python `3.11`
+- Isaac Lab  `2.3.0`
+- Isaac Sim  `5.1.0`
+
+
+## 安装
+
+在本仓库根目录执行：
 
 ```bash
+python -m pip install -e source/delto_walnut_hcy
+```
+
+安装后可以检查任务是否注册成功：
+
+```bash
+python scripts/list_envs.py
+```
+
+## 快速运行
+### 训练
+```bash
+python scripts/rsl_rl/train.py --task Template-Delto-Walnut-Direct-v0 --headless
+```
+
+训练日志：
+```bash
+tensorboard --logdir /root/gpufree-data/lab_lecture/delto_walnut_hcy/logs/rsl_rl/delto_walnut
+```
+
+常用参数：
+```bash
+--num_envs 128              # 覆盖并行环境数量
+--max_iterations 1000       # 覆盖训练迭代数
+--seed 42                   # 指定随机种子
+--video                     # 训练时录制视频
+--video_length 200          # 视频步数
+--video_interval 2000       # 视频录制间隔
+--resume                    # 从 checkpoint 恢复
+--load_run <run_dir>        # 指定恢复的 run 目录
+--checkpoint <model.pt>     # 指定恢复的 checkpoint
+```
+
+### 播放与导出策略
+```bash
+python scripts/rsl_rl/play.py --task Template-Delto-Walnut-Direct-v0 --num_envs 1 
+```
+
+如需录制播放视频：
+
+```bash
+python scripts/rsl_rl/play.py --task Template-Delto-Walnut-Direct-v0 --num_envs 1 --video --video_length 500 --headless
+```
+
+## 代码格式化
+
+项目包含 Ruff 与 pre-commit 配置。安装并运行：
+```bash
+pip install pre-commit
 pre-commit run --all-files
 ```
 
-## Troubleshooting
+## VS Code 配置
+仓库保留了 Isaac Lab 模板中的 VS Code 环境配置工具。可以在 VS Code 中运行任务 `setup_python_env`，按提示填写 Isaac Sim 安装路径。生成的 `.vscode/.python.env` 会帮助 Pylance 索引 Isaac Sim、Omniverse 和 Isaac Lab 的扩展路径。
 
-### Pylance Missing Indexing of Extensions
-
-In some VsCode versions, the indexing of part of the extensions is missing.
-In this case, add the path to your extension in `.vscode/settings.json` under the key `"python.analysis.extraPaths"`.
-
-```json
-{
-    "python.analysis.extraPaths": [
-        "<path-to-ext-repo>/source/delto_walnut_hcy"
-    ]
-}
-```
-
-### Pylance Crash
-
-If you encounter a crash in `pylance`, it is probable that too many files are indexed and you run out of memory.
-A possible solution is to exclude some of omniverse packages that are not used in your project.
-To do so, modify `.vscode/settings.json` and comment out packages under the key `"python.analysis.extraPaths"`
-Some examples of packages that can likely be excluded are:
-
-```json
-"<path-to-isaac-sim>/extscache/omni.anim.*"         // Animation packages
-"<path-to-isaac-sim>/extscache/omni.kit.*"          // Kit UI tools
-"<path-to-isaac-sim>/extscache/omni.graph.*"        // Graph UI tools
-"<path-to-isaac-sim>/extscache/omni.services.*"     // Services tools
-...
-```

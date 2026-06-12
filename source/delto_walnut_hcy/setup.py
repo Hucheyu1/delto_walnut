@@ -6,8 +6,8 @@
 """Installation script for the 'delto_walnut_hcy' python package."""
 
 import os
-import toml
 
+import toml
 from setuptools import setup
 
 # Obtain the extension data from the extension.toml file

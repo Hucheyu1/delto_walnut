@@ -18,7 +18,7 @@ from .delto_cfg import TESOLLO_CFG
 @configclass
 class DeltoWalnutEnvCfg(DirectRLEnvCfg):
     # 环境配置参数
-    decimation = 4  # 环境决策频率，控制仿真步长
+    decimation = 2  # 环境决策频率，控制仿真步长
     if decimation == 2:
         action_scale = 0.5
         episode_length_s = 10.0  # 每个episode的持续时间（秒）
@@ -72,7 +72,7 @@ class DeltoWalnutEnvCfg(DirectRLEnvCfg):
         dt=1 / 120,
         render_interval=1,
         physx=PhysxCfg(
-            gpu_collision_stack_size=2**27,  # 268 MB，足够覆盖日志里的 116 MB
+            gpu_collision_stack_size=2**27,  # 约 134 MB，覆盖日志里的 116 MB
         ),
         physics_material=RigidBodyMaterialCfg(
             static_friction=0.3,  # 静摩擦系数
@@ -86,9 +86,9 @@ class DeltoWalnutEnvCfg(DirectRLEnvCfg):
     viewer: ViewerCfg = ViewerCfg(
         origin_type="env",
         env_index=0,
-        # 相机位置：斜前上方近景
-        eye=(0.30, -0.24, 0.36),
-        # 看向两个球/手指接触区域
+        # 相机位置：沿双球旋转轴 [-0.707, 0, -0.707] 的反方向观察
+        eye=(0.476, -0.006, 0.574),
+        # 看向两个球和手指接触中心
         lookat=(0.158, -0.006, 0.256),
         resolution=(1920, 1080),
     )
@@ -260,7 +260,7 @@ class DeltoWalnutEnvCfg(DirectRLEnvCfg):
             prim_path=f"/World/envs/env_.*/Robot/{name}",  # 传感器路径
             update_period=0.0,  # 更新周期
             history_length=1,  # 历史长度
-            debug_vis=False,  # 是否显示调试可视化
+            debug_vis=True,  # 是否显示调试可视化
             filter_prim_paths_expr=[
                 f"/World/envs/env_.*/Robot/{contact_name}" for contact_name in contact_names[index]
             ],  # 过滤的传感器路径表达式

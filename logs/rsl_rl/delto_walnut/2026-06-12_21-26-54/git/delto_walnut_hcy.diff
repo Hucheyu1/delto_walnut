@@ -1,0 +1,1783 @@
+--- git status ---
+On branch master
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   README.md
+	modified:   scripts/rsl_rl/play.py
+	modified:   scripts/rsl_rl/train.py
+	modified:   source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/__init__.py
+	modified:   source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/agents/rsl_rl_ppo_cfg.py
+	modified:   source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env.py
+	modified:   source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py
+	modified:   source/delto_walnut_hcy/pyproject.toml
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	pyproject.toml
+	source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_cfg.py
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/README.md b/README.md
+index 496537b..cbf8312 100644
+--- a/README.md
++++ b/README.md
+@@ -1,135 +1,248 @@
+-# Template for Isaac Lab Projects
++# Delto Walnut HCY
+ 
+-## Overview
++这是一个基于 Isaac Lab 的强化学习项目，用于训练五指机械手在物理仿真中操控两颗小球，并尽量保持两球围绕指定轴线稳定旋转。项目采用 Isaac Lab 的 `DirectRLEnv` 接口实现环境，使用 RSL-RL 的 PPO 作为默认训练算法。
+ 
+-This project/repository serves as a template for building projects or extensions based on Isaac Lab.
+-It allows you to develop in an isolated environment, outside of the core Isaac Lab repository.
++当前注册的 Gym 任务名是：
+ 
+-**Key Features:**
++```bash
++Template-Delto-Walnut-Direct-v0
++```
+ 
+-- `Isolation` Work outside the core Isaac Lab repository, ensuring that your development efforts remain self-contained.
+-- `Flexibility` This template is set up to allow your code to be run as an extension in Omniverse.
++> 说明：任务名仍保留了 Isaac Lab 模板前缀 `Template-`。如果后续重命名任务，需要同步修改 `source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/__init__.py` 以及 `scripts/list_envs.py` 中的筛选字符串。
++
++## 项目结构
++
++```text
++.
++├── README.md
++├── scripts/
++│   ├── list_envs.py              # 列出已注册任务
++│   ├── zero_agent.py             # 零动作调试代理
++│   ├── random_agent.py           # 随机动作调试代理
++│   └── rsl_rl/
++│       ├── train.py              # RSL-RL 训练入口
++│       ├── play.py               # checkpoint 播放与策略导出入口
++│       └── cli_args.py           # RSL-RL 命令行参数
++└── source/delto_walnut_hcy/
++    ├── config/extension.toml      # Isaac Lab / Omniverse 扩展配置
++    ├── setup.py                   # Python 包安装配置
++    └── delto_walnut_hcy/
++        └── tasks/direct/delto_walnut_hcy/
++            ├── __init__.py
++            ├── delto_cfg.py                  # 五指手 USD 与执行器配置
++            ├── delto_walnut_hcy_env_cfg.py   # 环境、场景、观测/动作空间配置
++            ├── delto_walnut_hcy_env.py       # Direct RL 环境实现
++            ├── agents/rsl_rl_ppo_cfg.py      # PPO 默认超参数
++            └── robots/dg5f_right.usd         # 机械手资产
++```
+ 
+-**Keywords:** extension, template, isaaclab
++## 环境概览
+ 
+-## Installation
++- 机器人：`dg5f_right.usd` 五指机械手。
++- 操作对象：两个红色球体，默认半径 `0.02 m`，质量 `0.02 kg`。
++- 并行环境数：默认 `512`。
++- 动作空间：`20` 维，对应 20 个手部关节的增量位置控制。
++- 观测空间：`79` 维，包含关节位置/速度、两球位置/速度、上一步动作、旋转轴、旋转中心和球半径。
++- 仿真步长：`1 / 120 s`，默认 `decimation = 4`。
++- 单回合时长：默认 `10 s`。
++- 终止条件：任意球体高度低于 `drop_height_threshold = 0.1`。
+ 
+-- Install Isaac Lab by following the [installation guide](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html).
+-  We recommend using the conda installation as it simplifies calling Python scripts from the terminal.
++奖励主要约束两球的旋转半径、中心对称性、切向速度、绕轴方向、角速度、掉落惩罚、动作平滑、力矩和指间碰撞。环境中启用了课程学习，默认在第 `500` 到 `1000` 个 RSL-RL iteration 之间逐步加入动作质量与碰撞相关约束。
+ 
+-- Clone or copy this project/repository separately from the Isaac Lab installation (i.e. outside the `IsaacLab` directory):
++## 依赖
+ 
+-- Using a python interpreter that has Isaac Lab installed, install the library in editable mode using:
++请先安装 Isaac Sim 与 Isaac Lab，并确保当前 Python 解释器可以导入 Isaac Lab 相关包。
+ 
+-    ```bash
+-    # use 'PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
+-    python -m pip install -e source/delto_walnut_hcy
++建议环境：
+ 
+-- Verify that the extension is correctly installed by:
++- Python `3.10` 或 `3.11`
++- Isaac Lab
++- Isaac Sim `4.5.0` 或 `5.0.0`
++- RSL-RL
+ 
+-    - Listing the available tasks:
++如果没有把 Isaac Lab 安装到当前虚拟环境，可以用 Isaac Lab 提供的 Python 启动方式替代下面命令中的 `python`：
+ 
+-        Note: It the task name changes, it may be necessary to update the search pattern `"Template-"`
+-        (in the `scripts/list_envs.py` file) so that it can be listed.
++```bash
++/path/to/IsaacLab/isaaclab.sh -p
++```
+ 
+-        ```bash
+-        # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
+-        python scripts/list_envs.py
+-        ```
++## 安装
+ 
+-    - Running a task:
++在本仓库根目录执行：
+ 
+-        ```bash
+-        # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
+-        python scripts/<RL_LIBRARY>/train.py --task=<TASK_NAME>
+-        ```
++```bash
++python -m pip install -e source/delto_walnut_hcy
++```
+ 
+-    - Running a task with dummy agents:
++安装后可以检查任务是否注册成功：
+ 
+-        These include dummy agents that output zero or random agents. They are useful to ensure that the environments are configured correctly.
++```bash
++python scripts/list_envs.py
++```
+ 
+-        - Zero-action agent
++输出表格中应包含：
+ 
+-            ```bash
+-            # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
+-            python scripts/zero_agent.py --task=<TASK_NAME>
+-            ```
+-        - Random-action agent
++```text
++Template-Delto-Walnut-Direct-v0
++```
+ 
+-            ```bash
+-            # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
+-            python scripts/random_agent.py --task=<TASK_NAME>
+-            ```
++## 快速运行
+ 
+-### Set up IDE (Optional)
++### 零动作调试
+ 
+-To setup the IDE, please follow these instructions:
++用于检查环境能否正常创建、reset 和 step：
+ 
+-- Run VSCode Tasks, by pressing `Ctrl+Shift+P`, selecting `Tasks: Run Task` and running the `setup_python_env` in the drop down menu.
+-  When running this task, you will be prompted to add the absolute path to your Isaac Sim installation.
++```bash
++python scripts/zero_agent.py --task Template-Delto-Walnut-Direct-v0 --num_envs 1
++```
+ 
+-If everything executes correctly, it should create a file .python.env in the `.vscode` directory.
+-The file contains the python paths to all the extensions provided by Isaac Sim and Omniverse.
+-This helps in indexing all the python modules for intelligent suggestions while writing code.
++### 随机动作调试
+ 
+-### Setup as Omniverse Extension (Optional)
++用于检查动作空间、物理步进和基础渲染：
+ 
+-We provide an example UI extension that will load upon enabling your extension defined in `source/delto_walnut_hcy/delto_walnut_hcy/ui_extension_example.py`.
++```bash
++python scripts/random_agent.py --task Template-Delto-Walnut-Direct-v0 --num_envs 1
++```
+ 
+-To enable your extension, follow these steps:
++### 训练
+ 
+-1. **Add the search path of this project/repository** to the extension manager:
+-    - Navigate to the extension manager using `Window` -> `Extensions`.
+-    - Click on the **Hamburger Icon**, then go to `Settings`.
+-    - In the `Extension Search Paths`, enter the absolute path to the `source` directory of this project/repository.
+-    - If not already present, in the `Extension Search Paths`, enter the path that leads to Isaac Lab's extension directory directory (`IsaacLab/source`)
+-    - Click on the **Hamburger Icon**, then click `Refresh`.
++默认 PPO 配置位于 `agents/rsl_rl_ppo_cfg.py`，实验名为 `delto_walnut`：
+ 
+-2. **Search and enable your extension**:
+-    - Find your extension under the `Third Party` category.
+-    - Toggle it to enable your extension.
++```bash
++python scripts/rsl_rl/train.py \
++  --task Template-Delto-Walnut-Direct-v0 \
++  --num_envs 512 \
++  --max_iterations 2000 \
++  --headless
++```
++
++训练日志与 checkpoint 默认保存到：
+ 
+-## Code formatting
++```text
++logs/rsl_rl/delto_walnut/<timestamp>/
++```
+ 
+-We have a pre-commit template to automatically format your code.
+-To install pre-commit:
++常用参数：
+ 
+ ```bash
+-pip install pre-commit
++--num_envs 128              # 覆盖并行环境数量
++--max_iterations 1000       # 覆盖训练迭代数
++--seed 42                   # 指定随机种子
++--video                     # 训练时录制视频
++--video_length 200          # 视频步数
++--video_interval 2000       # 视频录制间隔
++--resume                    # 从 checkpoint 恢复
++--load_run <run_dir>        # 指定恢复的 run 目录
++--checkpoint <model.pt>     # 指定恢复的 checkpoint
++```
++
++### 播放与导出策略
++
++从最近一次或指定 checkpoint 播放：
++
++```bash
++python scripts/rsl_rl/play.py \
++  --task Template-Delto-Walnut-Direct-v0 \
++  --num_envs 1 \
++  --checkpoint logs/rsl_rl/delto_walnut/<run>/model_<iter>.pt
+ ```
+ 
+-Then you can run pre-commit with:
++`play.py` 会在 checkpoint 所在目录下导出：
++
++```text
++exported/policy.pt
++exported/policy.onnx
++```
++
++如需录制播放视频：
+ 
+ ```bash
++python scripts/rsl_rl/play.py \
++  --task Template-Delto-Walnut-Direct-v0 \
++  --num_envs 1 \
++  --checkpoint logs/rsl_rl/delto_walnut/<run>/model_<iter>.pt \
++  --video \
++  --video_length 400
++```
++
++## 关键配置位置
++
++- 环境注册：`source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/__init__.py`
++- 机器人 USD、初始姿态、执行器参数：`source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_cfg.py`
++- 环境参数、观测/动作维度、球体配置、viewer、课程学习参数：`source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py`
++- reset、step、reward、done 逻辑：`source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env.py`
++- PPO 网络结构与训练超参数：`source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/agents/rsl_rl_ppo_cfg.py`
++
++## 默认 PPO 配置
++
++默认训练配置摘要：
++
++- `num_steps_per_env = 16`
++- `max_iterations = 2000`
++- `save_interval = 200`
++- `experiment_name = "delto_walnut"`
++- Actor/Critic hidden dims：`[512, 512, 256, 128]`
++- 激活函数：`elu`
++- 学习率：`5.0e-4`
++- PPO epoch：`5`
++- mini-batch 数：`4`
++- `gamma = 0.99`
++- `lam = 0.95`
++- `desired_kl = 0.016`
++
++## 代码格式化
++
++项目包含 Ruff 与 pre-commit 配置。安装并运行：
++
++```bash
++pip install pre-commit
+ pre-commit run --all-files
+ ```
+ 
+-## Troubleshooting
++## VS Code 配置
++
++仓库保留了 Isaac Lab 模板中的 VS Code 环境配置工具。可以在 VS Code 中运行任务 `setup_python_env`，按提示填写 Isaac Sim 安装路径。生成的 `.vscode/.python.env` 会帮助 Pylance 索引 Isaac Sim、Omniverse 和 Isaac Lab 的扩展路径。
++
++## 常见问题
++
++### 找不到任务
++
++先确认扩展已安装：
++
++```bash
++python -m pip install -e source/delto_walnut_hcy
++```
++
++再运行：
++
++```bash
++python scripts/list_envs.py
++```
++
++如果修改过任务名，确认 `scripts/list_envs.py` 中的筛选字符串仍能匹配新的任务名。
+ 
+-### Pylance Missing Indexing of Extensions
++### 找不到 Isaac Lab / Isaac Sim 模块
+ 
+-In some VsCode versions, the indexing of part of the extensions is missing.
+-In this case, add the path to your extension in `.vscode/settings.json` under the key `"python.analysis.extraPaths"`.
++说明当前 `python` 不是 Isaac Lab 对应的解释器。请切换到安装 Isaac Lab 的 conda/venv，或使用：
+ 
+-```json
+-{
+-    "python.analysis.extraPaths": [
+-        "<path-to-ext-repo>/source/delto_walnut_hcy"
+-    ]
+-}
++```bash
++/path/to/IsaacLab/isaaclab.sh -p scripts/rsl_rl/train.py --task Template-Delto-Walnut-Direct-v0 --headless
+ ```
+ 
+-### Pylance Crash
++### GPU 显存不足
++
++降低并行环境数量：
++
++```bash
++python scripts/rsl_rl/train.py --task Template-Delto-Walnut-Direct-v0 --num_envs 128 --headless
++```
++
++### 训练结果没有按预期收敛
++
++优先检查这些位置：
+ 
+-If you encounter a crash in `pylance`, it is probable that too many files are indexed and you run out of memory.
+-A possible solution is to exclude some of omniverse packages that are not used in your project.
+-To do so, modify `.vscode/settings.json` and comment out packages under the key `"python.analysis.extraPaths"`
+-Some examples of packages that can likely be excluded are:
++- `delto_walnut_hcy_env_cfg.py` 中的 `action_scale`、`decimation`、`episode_length_s`。
++- `delto_walnut_hcy_env.py` 中 `_get_rewards()` 的各项 reward 权重和日志。
++- `rsl_rl_ppo_cfg.py` 中的学习率、网络规模、`num_steps_per_env` 和 `max_iterations`。
+ 
+-```json
+-"<path-to-isaac-sim>/extscache/omni.anim.*"         // Animation packages
+-"<path-to-isaac-sim>/extscache/omni.kit.*"          // Kit UI tools
+-"<path-to-isaac-sim>/extscache/omni.graph.*"        // Graph UI tools
+-"<path-to-isaac-sim>/extscache/omni.services.*"     // Services tools
+-...
+-```
+\ No newline at end of file
++训练时可关注日志中的 `r_rot`、`r_sym`、`r_tan`、`r_axis`、`r_dropped`、`r_smooth`、`r_omega`、`r_torque`、`r_collision` 和 `total_reward`。
+diff --git a/scripts/rsl_rl/play.py b/scripts/rsl_rl/play.py
+index c0e5c9b..e760fa8 100644
+--- a/scripts/rsl_rl/play.py
++++ b/scripts/rsl_rl/play.py
+@@ -17,23 +17,45 @@ import cli_args  # isort: skip
+ 
+ # add argparse arguments
+ parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
+-parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
+-parser.add_argument("--video_length", type=int, default=200, help="Length of the recorded video (in steps).")
+ parser.add_argument(
+-    "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
++    "--video", action="store_true", default=False, help="Record videos during training."
++)
++parser.add_argument(
++    "--video_length",
++    type=int,
++    default=200,
++    help="Length of the recorded video (in steps).",
++)
++parser.add_argument(
++    "--disable_fabric",
++    action="store_true",
++    default=False,
++    help="Disable fabric and use USD I/O operations.",
++)
++parser.add_argument(
++    "--num_envs", type=int, default=None, help="Number of environments to simulate."
+ )
+-parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
+ parser.add_argument("--task", type=str, default=None, help="Name of the task.")
+ parser.add_argument(
+-    "--agent", type=str, default="rsl_rl_cfg_entry_point", help="Name of the RL agent configuration entry point."
++    "--agent",
++    type=str,
++    default="rsl_rl_cfg_entry_point",
++    help="Name of the RL agent configuration entry point.",
++)
++parser.add_argument(
++    "--seed", type=int, default=None, help="Seed used for the environment"
+ )
+-parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
+ parser.add_argument(
+     "--use_pretrained_checkpoint",
+     action="store_true",
+     help="Use the pre-trained checkpoint from Nucleus.",
+ )
+-parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
++parser.add_argument(
++    "--real-time",
++    action="store_true",
++    default=False,
++    help="Run in real-time, if possible.",
++)
+ # append RSL-RL cli arguments
+ cli_args.add_rsl_rl_args(parser)
+ # append AppLauncher cli args
+@@ -53,13 +75,13 @@ simulation_app = app_launcher.app
+ 
+ """Rest everything follows."""
+ 
+-import gymnasium as gym
+ import os
+ import time
+-import torch
+-
+-from rsl_rl.runners import OnPolicyRunner
+ 
++import delto_walnut_hcy.tasks  # noqa: F401
++import gymnasium as gym
++import isaaclab_tasks  # noqa: F401
++import torch
+ from isaaclab.envs import (
+     DirectMARLEnv,
+     DirectMARLEnvCfg,
+@@ -70,18 +92,22 @@ from isaaclab.envs import (
+ from isaaclab.utils.assets import retrieve_file_path
+ from isaaclab.utils.dict import print_dict
+ from isaaclab.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
+-
+-from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper, export_policy_as_jit, export_policy_as_onnx
+-
+-import isaaclab_tasks  # noqa: F401
++from isaaclab_rl.rsl_rl import (
++    RslRlOnPolicyRunnerCfg,
++    RslRlVecEnvWrapper,
++    export_policy_as_jit,
++    export_policy_as_onnx,
++)
+ from isaaclab_tasks.utils import get_checkpoint_path
+ from isaaclab_tasks.utils.hydra import hydra_task_config
+-
+-import delto_walnut_hcy.tasks  # noqa: F401
++from rsl_rl.runners import OnPolicyRunner
+ 
+ 
+ @hydra_task_config(args_cli.task, args_cli.agent)
+-def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: RslRlOnPolicyRunnerCfg):
++def main(
++    env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg,
++    agent_cfg: RslRlOnPolicyRunnerCfg,
++):
+     """Play with RSL-RL agent."""
+     # grab task name for checkpoint path
+     task_name = args_cli.task.split(":")[-1]
+@@ -89,12 +115,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
+ 
+     # override configurations with non-hydra CLI arguments
+     agent_cfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
+-    env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
++    env_cfg.scene.num_envs = (
++        args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
++    )
+ 
+     # set the environment seed
+     # note: certain randomizations occur in the environment initialization so we set the seed here
+     env_cfg.seed = agent_cfg.seed
+-    env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
++    env_cfg.sim.device = (
++        args_cli.device if args_cli.device is not None else env_cfg.sim.device
++    )
+ 
+     # specify directory for logging experiments
+     log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)
+@@ -103,17 +133,23 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
+     if args_cli.use_pretrained_checkpoint:
+         resume_path = get_published_pretrained_checkpoint("rsl_rl", train_task_name)
+         if not resume_path:
+-            print("[INFO] Unfortunately a pre-trained checkpoint is currently unavailable for this task.")
++            print(
++                "[INFO] Unfortunately a pre-trained checkpoint is currently unavailable for this task."
++            )
+             return
+     elif args_cli.checkpoint:
+         resume_path = retrieve_file_path(args_cli.checkpoint)
+     else:
+-        resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
++        resume_path = get_checkpoint_path(
++            log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint
++        )
+ 
+     log_dir = os.path.dirname(resume_path)
+ 
+     # create isaac environment
+-    env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
++    env = gym.make(
++        args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None
++    )
+ 
+     # convert to single-agent instance if required by the RL algorithm
+     if isinstance(env.unwrapped, DirectMARLEnv):
+@@ -136,7 +172,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
+ 
+     print(f"[INFO]: Loading model checkpoint from: {resume_path}")
+     # load previously trained model
+-    ppo_runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
++    ppo_runner = OnPolicyRunner(
++        env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device
++    )
+     ppo_runner.load(resume_path)
+ 
+     # obtain the trained policy for inference
+@@ -153,9 +191,17 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
+ 
+     # export policy to onnx/jit
+     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
+-    export_policy_as_jit(policy_nn, ppo_runner.obs_normalizer, path=export_model_dir, filename="policy.pt")
++    export_policy_as_jit(
++        policy_nn,
++        ppo_runner.obs_normalizer,
++        path=export_model_dir,
++        filename="policy.pt",
++    )
+     export_policy_as_onnx(
+-        policy_nn, normalizer=ppo_runner.obs_normalizer, path=export_model_dir, filename="policy.onnx"
++        policy_nn,
++        normalizer=ppo_runner.obs_normalizer,
++        path=export_model_dir,
++        filename="policy.onnx",
+     )
+ 
+     dt = env.unwrapped.step_dt
+diff --git a/scripts/rsl_rl/train.py b/scripts/rsl_rl/train.py
+index 8c5821c..c43a3ac 100644
+--- a/scripts/rsl_rl/train.py
++++ b/scripts/rsl_rl/train.py
+@@ -18,20 +18,49 @@ import cli_args  # isort: skip
+ 
+ # add argparse arguments
+ parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
+-parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
+-parser.add_argument("--video_length", type=int, default=200, help="Length of the recorded video (in steps).")
+-parser.add_argument("--video_interval", type=int, default=2000, help="Interval between video recordings (in steps).")
+-parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
++parser.add_argument(
++    "--video", action="store_true", default=False, help="Record videos during training."
++)
++parser.add_argument(
++    "--video_length",
++    type=int,
++    default=200,
++    help="Length of the recorded video (in steps).",
++)
++parser.add_argument(
++    "--video_interval",
++    type=int,
++    default=2000,
++    help="Interval between video recordings (in steps).",
++)
++parser.add_argument(
++    "--num_envs", type=int, default=None, help="Number of environments to simulate."
++)
+ parser.add_argument("--task", type=str, default=None, help="Name of the task.")
+ parser.add_argument(
+-    "--agent", type=str, default="rsl_rl_cfg_entry_point", help="Name of the RL agent configuration entry point."
++    "--agent",
++    type=str,
++    default="rsl_rl_cfg_entry_point",
++    help="Name of the RL agent configuration entry point.",
+ )
+-parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
+-parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
+ parser.add_argument(
+-    "--distributed", action="store_true", default=False, help="Run training with multiple GPUs or nodes."
++    "--seed", type=int, default=None, help="Seed used for the environment"
++)
++parser.add_argument(
++    "--max_iterations", type=int, default=None, help="RL Policy training iterations."
++)
++parser.add_argument(
++    "--distributed",
++    action="store_true",
++    default=False,
++    help="Run training with multiple GPUs or nodes.",
++)
++parser.add_argument(
++    "--export_io_descriptors",
++    action="store_true",
++    default=False,
++    help="Export IO descriptors.",
+ )
+-parser.add_argument("--export_io_descriptors", action="store_true", default=False, help="Export IO descriptors.")
+ # append RSL-RL cli arguments
+ cli_args.add_rsl_rl_args(parser)
+ # append AppLauncher cli args
+@@ -59,11 +88,27 @@ from packaging import version
+ # for distributed training, check minimum supported rsl-rl version
+ RSL_RL_VERSION = "2.3.1"
+ installed_version = metadata.version("rsl-rl-lib")
+-if args_cli.distributed and version.parse(installed_version) < version.parse(RSL_RL_VERSION):
++if args_cli.distributed and version.parse(installed_version) < version.parse(
++    RSL_RL_VERSION
++):
+     if platform.system() == "Windows":
+-        cmd = [r".\isaaclab.bat", "-p", "-m", "pip", "install", f"rsl-rl-lib=={RSL_RL_VERSION}"]
++        cmd = [
++            r".\isaaclab.bat",
++            "-p",
++            "-m",
++            "pip",
++            "install",
++            f"rsl-rl-lib=={RSL_RL_VERSION}",
++        ]
+     else:
+-        cmd = ["./isaaclab.sh", "-p", "-m", "pip", "install", f"rsl-rl-lib=={RSL_RL_VERSION}"]
++        cmd = [
++            "./isaaclab.sh",
++            "-p",
++            "-m",
++            "pip",
++            "install",
++            f"rsl-rl-lib=={RSL_RL_VERSION}",
++        ]
+     print(
+         f"Please install the correct version of RSL-RL.\nExisting version is: '{installed_version}'"
+         f" and required version is: '{RSL_RL_VERSION}'.\nTo install the correct version, run:"
+@@ -73,14 +118,14 @@ if args_cli.distributed and version.parse(installed_version) < version.parse(RSL
+ 
+ """Rest everything follows."""
+ 
+-import gymnasium as gym
+ import os
+-import torch
+ from datetime import datetime
+ 
++import delto_walnut_hcy.tasks  # noqa: F401
++import gymnasium as gym
++import isaaclab_tasks  # noqa: F401
+ import omni
+-from rsl_rl.runners import OnPolicyRunner
+-
++import torch
+ from isaaclab.envs import (
+     DirectMARLEnv,
+     DirectMARLEnvCfg,
+@@ -90,14 +135,10 @@ from isaaclab.envs import (
+ )
+ from isaaclab.utils.dict import print_dict
+ from isaaclab.utils.io import dump_pickle, dump_yaml
+-
+ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
+-
+-import isaaclab_tasks  # noqa: F401
+ from isaaclab_tasks.utils import get_checkpoint_path
+ from isaaclab_tasks.utils.hydra import hydra_task_config
+-
+-import delto_walnut_hcy.tasks  # noqa: F401
++from rsl_rl.runners import OnPolicyRunner
+ 
+ torch.backends.cuda.matmul.allow_tf32 = True
+ torch.backends.cudnn.allow_tf32 = True
+@@ -106,19 +147,28 @@ torch.backends.cudnn.benchmark = False
+ 
+ 
+ @hydra_task_config(args_cli.task, args_cli.agent)
+-def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: RslRlOnPolicyRunnerCfg):
++def main(
++    env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg,
++    agent_cfg: RslRlOnPolicyRunnerCfg,
++):
+     """Train with RSL-RL agent."""
+     # override configurations with non-hydra CLI arguments
+     agent_cfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
+-    env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
++    env_cfg.scene.num_envs = (
++        args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
++    )
+     agent_cfg.max_iterations = (
+-        args_cli.max_iterations if args_cli.max_iterations is not None else agent_cfg.max_iterations
++        args_cli.max_iterations
++        if args_cli.max_iterations is not None
++        else agent_cfg.max_iterations
+     )
+ 
+     # set the environment seed
+     # note: certain randomizations occur in the environment initialization so we set the seed here
+     env_cfg.seed = agent_cfg.seed
+-    env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
++    env_cfg.sim.device = (
++        args_cli.device if args_cli.device is not None else env_cfg.sim.device
++    )
+ 
+     # multi-gpu training configuration
+     if args_cli.distributed:
+@@ -152,7 +202,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
+         )
+ 
+     # create isaac environment
+-    env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
++    env = gym.make(
++        args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None
++    )
+ 
+     # convert to single-agent instance if required by the RL algorithm
+     if isinstance(env.unwrapped, DirectMARLEnv):
+@@ -160,7 +212,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
+ 
+     # save resume path before creating a new log_dir
+     if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
+-        resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
++        resume_path = get_checkpoint_path(
++            log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint
++        )
+ 
+     # wrap for video recording
+     if args_cli.video:
+@@ -178,7 +232,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
+     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
+ 
+     # create runner from rsl-rl
+-    runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
++    runner = OnPolicyRunner(
++        env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device
++    )
+     # write git state to logs
+     runner.add_git_repo_to_log(__file__)
+     # load the checkpoint
+@@ -194,7 +250,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
+     dump_pickle(os.path.join(log_dir, "params", "agent.pkl"), agent_cfg)
+ 
+     # run training
+-    runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
++    runner.learn(
++        num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True
++    )
+ 
+     # close the simulator
+     env.close()
+diff --git a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/__init__.py b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/__init__.py
+index 9c8821a..82c143e 100644
+--- a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/__init__.py
++++ b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/__init__.py
+@@ -1,23 +1,13 @@
+-# Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+-# All rights reserved.
+-#
+-# SPDX-License-Identifier: BSD-3-Clause
+-
+ import gymnasium as gym
+ 
+ from . import agents
+ 
+-##
+-# Register Gym environments.
+-##
+-
+-
+ gym.register(
+-    id="Template-Delto-Walnut-Hcy-Direct-v0",
+-    entry_point=f"{__name__}.delto_walnut_hcy_env:DeltoWalnutHcyEnv",
++    id="Template-Delto-Walnut-Direct-v0",
++    entry_point=f"{__name__}.delto_walnut_hcy_env:DeltoWalnutEnv",
+     disable_env_checker=True,
+     kwargs={
+-        "env_cfg_entry_point": f"{__name__}.delto_walnut_hcy_env_cfg:DeltoWalnutHcyEnvCfg",
++        "env_cfg_entry_point": f"{__name__}.delto_walnut_hcy_env_cfg:DeltoWalnutEnvCfg",
+         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PPORunnerCfg",
+     },
+-)
+\ No newline at end of file
++)
+diff --git a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/agents/rsl_rl_ppo_cfg.py b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/agents/rsl_rl_ppo_cfg.py
+index b7e7cc9..d5663cc 100644
+--- a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/agents/rsl_rl_ppo_cfg.py
++++ b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/agents/rsl_rl_ppo_cfg.py
+@@ -4,34 +4,35 @@
+ # SPDX-License-Identifier: BSD-3-Clause
+ 
+ from isaaclab.utils import configclass
+-
+ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
+ 
+ 
+ @configclass
+ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
+     num_steps_per_env = 16
+-    max_iterations = 150
+-    save_interval = 50
+-    experiment_name = "cartpole_direct"
+-    empirical_normalization = False
++    max_iterations = 2000
++    save_interval = 200
++    experiment_name = "delto_walnut"
++    empirical_normalization = True
++    clip_actions = 1.0
+     policy = RslRlPpoActorCriticCfg(
+         init_noise_std=1.0,
+-        actor_hidden_dims=[32, 32],
+-        critic_hidden_dims=[32, 32],
++        noise_std_type="log",
++        actor_hidden_dims=[512, 512, 256, 128],
++        critic_hidden_dims=[512, 512, 256, 128],
+         activation="elu",
+     )
+     algorithm = RslRlPpoAlgorithmCfg(
+-        value_loss_coef=1.0,
+-        use_clipped_value_loss=True,
+-        clip_param=0.2,
+-        entropy_coef=0.005,
+-        num_learning_epochs=5,
+-        num_mini_batches=4,
+-        learning_rate=1.0e-3,
+-        schedule="adaptive",
+-        gamma=0.99,
+-        lam=0.95,
+-        desired_kl=0.01,
+-        max_grad_norm=1.0,
+-    )
+\ No newline at end of file
++        value_loss_coef=1.0,  # 价值函数损失系数
++        use_clipped_value_loss=True,  # 启用价值函数裁剪
++        clip_param=0.2,  # PPO裁剪参数
++        entropy_coef=0,  # 熵正则化系数
++        num_learning_epochs=5,  # 每次更新的训练轮数
++        num_mini_batches=4,  # 小批量数量
++        learning_rate=5.0e-4,  # 初始学习率
++        schedule="adaptive",  # 自适应学习率调度
++        gamma=0.99,  # 折扣因子
++        lam=0.95,  # GAE参数
++        desired_kl=0.016,  # 目标KL散度
++        max_grad_norm=1.0,  # 梯度裁剪阈值
++    )
+diff --git a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env.py b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env.py
+index 19edea9..d5e31e6 100644
+--- a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env.py
++++ b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env.py
+@@ -5,131 +5,485 @@
+ 
+ from __future__ import annotations
+ 
+-import math
+-import torch
+ from collections.abc import Sequence
+ 
+ import isaaclab.sim as sim_utils
+-from isaaclab.assets import Articulation
++import numpy as np
++import torch
++from isaaclab.assets import Articulation, RigidObject
+ from isaaclab.envs import DirectRLEnv
++from isaaclab.sensors import ContactSensor
+ from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
+-from isaaclab.utils.math import sample_uniform
++from pxr import UsdPhysics
++
++from .delto_walnut_hcy_env_cfg import DeltoWalnutEnvCfg
++
++np.set_printoptions(precision=3, suppress=True)  # print禁用科学计数法，保留3位小数
++
+ 
+-from .delto_walnut_hcy_env_cfg import DeltoWalnutHcyEnvCfg
++class DeltoWalnutEnv(DirectRLEnv):
++    """
++    DeltoWalnutEnv 是一个强化学习环境，用于控制机械手抓取并旋转两个坚果球。
+ 
++    该环境实现了基于物理的仿真，通过控制机械手关节来实现对两个球体的精确控制。
++    环境包含奖励函数，用于评估机械手是否成功将两个球体保持在特定的旋转约束下。
+ 
+-class DeltoWalnutHcyEnv(DirectRLEnv):
+-    cfg: DeltoWalnutHcyEnvCfg
++    Attributes:
++        cfg: 环境配置对象，包含机器人、球体等配置参数
++    """
+ 
+-    def __init__(self, cfg: DeltoWalnutHcyEnvCfg, render_mode: str | None = None, **kwargs):
++    cfg: DeltoWalnutEnvCfg
++
++    def __init__(self, cfg: DeltoWalnutEnvCfg, render_mode: str | None = None, **kwargs):
+         super().__init__(cfg, render_mode, **kwargs)
+ 
+-        self._cart_dof_idx, _ = self.robot.find_joints(self.cfg.cart_dof_name)
+-        self._pole_dof_idx, _ = self.robot.find_joints(self.cfg.pole_dof_name)
++        self.global_env_step = 0
++        N = self.scene.num_envs
++
++        # 获取关节引用
++        self.robot_joint_ids, _ = self.robot.find_joints(self.cfg.hand_joint_names)
++
++        # 动作/关节限位
++        self.action_scale = cfg.action_scale
++        self.hand_lower_limits = torch.tensor(cfg.hand_lower_limits, device=self.device) * np.pi / 180
++        self.hand_upper_limits = torch.tensor(cfg.hand_upper_limits, device=self.device) * np.pi / 180
++
++        # 初始位姿
++        self.hand_start_position = torch.tensor(cfg.hand_position, device=self.device)
++
++        # 球相对于手的位姿
++        self.ball1_to_robot_pos = torch.tensor([[0.0452, -0.0133, 0.1767]], device=self.device)
++        self.ball1_to_robot_quat = torch.tensor(
++            [[-4.0384e-08, -9.2388e-01, -1.6727e-08, -3.8268e-01]], device=self.device
++        )
++        self.ball2_to_robot_pos = torch.tensor([[0.0454, 0.0266, 0.1796]], device=self.device)
++        self.ball2_to_robot_quat = torch.tensor(
++            [[-4.0384e-08, -9.2388e-01, -1.6727e-08, -3.8268e-01]], device=self.device
++        )
++
++        # 创建动作缓存：当前动作、上一步动作（用于计算平滑度）、目标位置（用于累加）
++        self.raw_actions = torch.zeros(N, cfg.action_space, device=self.device)
++        self.raw_prev_actions = torch.zeros_like(self.raw_actions)
++        self.target_pos = self.hand_start_position.clone().unsqueeze(0).repeat(N, 1)
++
++        # 提取两个核桃在世界坐标系下的默认初始位置
++        self.ball1_default_pos = self.ball1.data.default_root_state[:, 0:3]
++        self.ball2_default_pos = self.ball2.data.default_root_state[:, 0:3]
++        self.rot_center = (self.ball1_default_pos + self.ball2_default_pos) / 2  # (N,3)
++
++        # 定义理想的旋转轴：一个斜向下 45 度的向量向量 [-0.707, 0, -0.707]
++        self.rot_axis = torch.tensor([-0.707, 0, -0.707], device=self.device).unsqueeze(0)
++        # self.rot_axis = torch.tensor([-math.cos(math.pi/3), 0, -math.sin(math.pi/6)], device=self.device).unsqueeze(0)
++
++        # 日志统计
++        self.extras["log"] = {
++            "r_rot": torch.zeros(N, device=self.device),
++            "r_sym": torch.zeros(N, device=self.device),
++            "r_tan": torch.zeros(N, device=self.device),
++            "r_axis": torch.zeros(N, device=self.device),
++            "r_dropped": torch.zeros(N, device=self.device),
++            "r_smooth": torch.zeros(N, device=self.device),
++            "r_omega": torch.zeros(N, device=self.device),
++            "r_torque": torch.zeros(N, device=self.device),
++            "r_collision": torch.zeros(N, device=self.device),
++            "total_reward": torch.zeros(N, device=self.device),
++        }
++
++        print(f"max_episode_length: {self.max_episode_length}")
++        self.pt_ct = 0
+ 
+-        self.joint_pos = self.robot.data.joint_pos
+-        self.joint_vel = self.robot.data.joint_vel
++        # self.data = dict()
++        # self.data['frame'] = list()
++        # self.data['actions'] = list()
++        # self.data['target_pos'] = list()
++        # self.data['obs_joint_pos'] = list()
++        self.reset_count = 0
+ 
+     def _setup_scene(self):
++        # 实例化机器人和两个球体
+         self.robot = Articulation(self.cfg.robot_cfg)
++        self.ball1 = RigidObject(self.cfg.ball1_cfg)
++        self.ball2 = RigidObject(self.cfg.ball2_cfg)
+         # add ground plane
+         spawn_ground_plane(prim_path="/World/ground", cfg=GroundPlaneCfg())
+-        # clone and replicate
++        # 依照 num_envs 克隆并行环境
+         self.scene.clone_environments(copy_from_source=False)
+         # we need to explicitly filter collisions for CPU simulation
+         if self.device == "cpu":
+             self.scene.filter_collisions(global_prim_paths=[])
+-        # add articulation to scene
++        # 将实体注册到场景的字典中以便后续管理
+         self.scene.articulations["robot"] = self.robot
+-        # add lights
++        self.scene.rigid_objects["ball1"] = self.ball1
++        self.scene.rigid_objects["ball2"] = self.ball2
++        # 添加光照和接触传感器（用于检测挤压碰撞力）
+         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
+         light_cfg.func("/World/Light", light_cfg)
++        # add contact sensors
++        for name in self.cfg.ft_names:
++            self.scene.sensors[name] = ContactSensor(self.cfg.contact_sensors[name])
++        # -------- 底层物理碰撞过滤 --------
++        for i in range(self.num_envs):
++            path_ball1 = f"/World/envs/env_{i}/ball1"
++            path_ball2 = f"/World/envs/env_{i}/ball2"
++            # 获取指尖 (r1c_sphere 到 r5c_sphere) 的 USD 路径
++            finger_ball_path = list()
++            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r1c_sphere")
++            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r2c_sphere")
++            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r3c_sphere")
++            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r4c_sphere")
++            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r5c_sphere")
++            prim_ball1 = self.sim.stage.GetPrimAtPath(path_ball1)
++            prim_ball2 = self.sim.stage.GetPrimAtPath(path_ball2)
++            # print(f"prim_ball1: {prim_ball1}")
++            # print(f"prim_ball2: {prim_ball2}")
++            # 使用 USD 原生 API (UsdPhysics.FilteredPairsAPI)
++            # 强制让球 1 和球 2 忽略与指尖（r*c_sphere）的物理碰撞
++            if prim_ball1.IsValid():
++                ball1_api = UsdPhysics.FilteredPairsAPI.Apply(prim_ball1)
++                ball2_api = UsdPhysics.FilteredPairsAPI.Apply(prim_ball2)
++                ball1_rel = ball1_api.CreateFilteredPairsRel()
++                ball2_rel = ball2_api.CreateFilteredPairsRel()
++                for i in range(len(finger_ball_path)):
++                    ball1_rel.AddTarget(finger_ball_path[i])
++                    ball2_rel.AddTarget(finger_ball_path[i])
+ 
+     def _pre_physics_step(self, actions: torch.Tensor) -> None:
+-        self.actions = actions.clone()
++        self.global_env_step += 1
++
++        # self.data['actions'].append(actions.tolist())
++        # 先保存旧动作
++        self.raw_prev_actions.copy_(self.raw_actions)
++        # 再更新当前动作
++        self.raw_actions = torch.clamp(actions, -1.0, 1.0)
++        # 【重要】增量式控制 (Delta-position Control)
++        # 目标位置 = 当前目标位置 + 缩放系数 * 网络输出动作
++        self.target_pos = self.target_pos + self.action_scale * self.raw_actions
++        self.target_pos = torch.clamp(self.target_pos, self.hand_lower_limits, self.hand_upper_limits)
+ 
+     def _apply_action(self) -> None:
+-        self.robot.set_joint_effort_target(self.actions * self.cfg.action_scale, joint_ids=self._cart_dof_idx)
++        # 将最终算出的目标位置下发给机器人的 PD 控制器
++        self.robot.set_joint_position_target(self.target_pos, joint_ids=self.robot_joint_ids)
++        # self.data['frame'].append(self.episode_length_buf.tolist())
++        # self.data['target_pos'].append(self.target_pos.tolist())
+ 
+     def _get_observations(self) -> dict:
+-        obs = torch.cat(
+-            (
+-                self.joint_pos[:, self._pole_dof_idx[0]].unsqueeze(dim=1),
+-                self.joint_vel[:, self._pole_dof_idx[0]].unsqueeze(dim=1),
+-                self.joint_pos[:, self._cart_dof_idx[0]].unsqueeze(dim=1),
+-                self.joint_vel[:, self._cart_dof_idx[0]].unsqueeze(dim=1),
+-            ),
+-            dim=-1,
++        # ---------------- robot 获取关节真实物理位置和速度----------------
++        joint_pos = self.robot.data.joint_pos[:, self.robot_joint_ids]  # (N, dof)
++        joint_vel = self.robot.data.joint_vel[:, self.robot_joint_ids]  # (N, dof)
++
++        # 将关节位置从物理弧度值归一化到 [-1, 1] 的区间，有利于神经网络加速收敛
++        joint_pos_norm = (
++            2.0 * (joint_pos - self.hand_lower_limits) / (self.hand_upper_limits - self.hand_lower_limits + 1e-6) - 1.0
+         )
+-        observations = {"policy": obs}
+-        return observations
+ 
+-    def _get_rewards(self) -> torch.Tensor:
+-        total_reward = compute_rewards(
+-            self.cfg.rew_scale_alive,
+-            self.cfg.rew_scale_terminated,
+-            self.cfg.rew_scale_pole_pos,
+-            self.cfg.rew_scale_cart_vel,
+-            self.cfg.rew_scale_pole_vel,
+-            self.joint_pos[:, self._pole_dof_idx[0]],
+-            self.joint_vel[:, self._pole_dof_idx[0]],
+-            self.joint_pos[:, self._cart_dof_idx[0]],
+-            self.joint_vel[:, self._cart_dof_idx[0]],
+-            self.reset_terminated,
++        # ---------------- object 变成每个并行环境自己的局部坐标，避免不同 env 的世界坐标偏移污染观测。----------------
++        ball1_pos = self.ball1.data.root_pos_w - self.scene.env_origins
++        ball2_pos = self.ball2.data.root_pos_w - self.scene.env_origins
++        ball1_lin_vel = self.ball1.data.root_lin_vel_w
++        ball2_lin_vel = self.ball2.data.root_lin_vel_w
++
++        # # 沿着 batch 维度复制不变量（旋转轴、中心点、半径）
++        rot_axis_rep = self.rot_axis.repeat(self.scene.num_envs, 1)  # [num_envs, 3]
++        rot_center_rep = self.rot_center  # [num_envs, 3]
++        ball_radius_rep = torch.tensor(self.cfg.ball_radius, device=self.device).repeat(
++            self.scene.num_envs, 1
++        )  # [num_envs, 1]
++
++        obs = torch.cat(
++            [
++                joint_pos_norm,  # N, 20  关节位置归一化值
++                joint_vel,  # N, 20  关节速度
++                ball1_pos,  # N, 3   球1位置坐标
++                ball1_lin_vel,  # N, 3   球1线速度
++                ball2_pos,  # N, 3   球2位置坐标
++                ball2_lin_vel,  # N, 3   球2线速度
++                self.raw_prev_actions,  # N, 20  前一时刻的动作
++                rot_axis_rep,  # N, 3   旋转轴表示
++                rot_center_rep,  # N, 3   旋转中心表示
++                ball_radius_rep,  # N, 1   球半径表示
++            ],
++            dim=-1,
+         )
+-        return total_reward
++        # self.data['obs_joint_pos'].append(joint_pos.tolist())
++        return {"policy": obs}
+ 
+     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
+-        self.joint_pos = self.robot.data.joint_pos
+-        self.joint_vel = self.robot.data.joint_vel
+-
+-        time_out = self.episode_length_buf >= self.max_episode_length - 1
+-        out_of_bounds = torch.any(torch.abs(self.joint_pos[:, self._cart_dof_idx]) > self.cfg.max_cart_pos, dim=1)
+-        out_of_bounds = out_of_bounds | torch.any(torch.abs(self.joint_pos[:, self._pole_dof_idx]) > math.pi / 2, dim=1)
+-        return out_of_bounds, time_out
++        # self.pt_ct += 1
++        obj_ball1_z = self.ball1.data.root_pos_w[:, 2]
++        obj_ball2_z = self.ball2.data.root_pos_w[:, 2]
++        terminated = (obj_ball1_z < self.cfg.drop_height_threshold) | (obj_ball2_z < self.cfg.drop_height_threshold)
++        truncated = self.episode_length_buf >= (self.max_episode_length - 1)
++        # if self.pt_ct == 10:
++        #     print("run time:",self.episode_length_buf[0], self.max_episode_length)
++        #     self.pt_ct = 0
++        return terminated, truncated
+ 
++    # 在仿真环境每次重置时，将当前环境状态保存到文件中，并重置各种状态变量、关节位置、机器人和球体的位姿等
+     def _reset_idx(self, env_ids: Sequence[int] | None):
++        # with open('/home/amlrobotics/hcy_ws/record_data/data_0528_' + str(self.reset_count) + '.pkl', 'wb') as file:
++        #     pickle.dump(self.data, file)
++        #     self.reset_count += 1
++        #     for key in self.data:
++        #         self.data[key].clear()
++
++        self.reset_count += 1
++        # for key in self.data:
++        #     self.data[key].clear()
+         if env_ids is None:
+-            env_ids = self.robot._ALL_INDICES
++            env_ids = self.robot._ALL_INDICES  # type: ignore
+         super()._reset_idx(env_ids)
+ 
++        # 重置日志
++        for k in self.extras["log"]:
++            self.extras["log"][k][env_ids] = 0.0
++
++        # 重置 reward 相关
++        self.target_pos[env_ids] = self.hand_start_position.clone()
++        self.raw_actions[env_ids] = 0.0
++        self.raw_prev_actions[env_ids] = 0.0
++
++        # 重置关节
+         joint_pos = self.robot.data.default_joint_pos[env_ids]
+-        joint_pos[:, self._pole_dof_idx] += sample_uniform(
+-            self.cfg.initial_pole_angle_range[0] * math.pi,
+-            self.cfg.initial_pole_angle_range[1] * math.pi,
+-            joint_pos[:, self._pole_dof_idx].shape,
+-            joint_pos.device,
+-        )
+         joint_vel = self.robot.data.default_joint_vel[env_ids]
++        self.robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
+ 
+-        default_root_state = self.robot.data.default_root_state[env_ids]
+-        default_root_state[:, :3] += self.scene.env_origins[env_ids]
++        # -------- 手和球的 pose 重置（都先在 env 局部坐标系中处理） --------
++        # 这些 default_root_state 是在 env 局部坐标系下的
++        robot_root_state = self.robot.data.default_root_state[env_ids].clone()  # (N, 13)
++        ball1_root_state = self.ball1.data.default_root_state[env_ids].clone()  # (N, 13)
++        ball2_root_state = self.ball2.data.default_root_state[env_ids].clone()  # (N, 13)
+ 
+-        self.joint_pos[env_ids] = joint_pos
+-        self.joint_vel[env_ids] = joint_vel
++        # -------- 统一加 env_origins，写回模拟 --------
++        env_origins = self.scene.env_origins[env_ids]  # (N, 3)
+ 
+-        self.robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
+-        self.robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
+-        self.robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
++        robot_root_state[:, :3] += env_origins
++        ball1_root_state[:, :3] += env_origins
++        ball2_root_state[:, :3] += env_origins
++
++        self.robot.write_root_pose_to_sim(robot_root_state[:, :7], env_ids)
++        self.robot.write_root_velocity_to_sim(robot_root_state[:, 7:], env_ids)
++        self.ball1.write_root_state_to_sim(ball1_root_state, env_ids)
++        self.ball2.write_root_state_to_sim(ball2_root_state, env_ids)
++
++    def _smooth_ramp(self, x: float, start: float, end: float) -> float:
++        """Smoothly increase from 0 to 1 between start and end."""
++        if x <= start:
++            return 0.0
++        if x >= end:
++            return 1.0
++
++        p = (x - start) / (end - start)
++        return p * p * (3.0 - 2.0 * p)
++
++    def _get_curriculum_weights(self) -> dict[str, float]:
++        """Two-stage curriculum.
++
++        Stage 1:
++            保持双球几何结构 + 转起来 + 不掉落。
++
++        Stage 2:
++            在已经能完成主任务的基础上，逐渐加入动作平滑、力矩、碰撞惩罚。
++        """
++
++        if not getattr(self.cfg, "enable_curriculum", True):
++            return {
++                "rot": 10e-3,
++                "sym": 0.5 * 10e-3,
++                "tan": 1.0 * 10e-5,
++                "dropped": 1.0,
++                "omega": 0.5 * 10e-4,
++                "axis": 0.5 * 10e-2,
++                "smooth": 0.5 * 10e-6,
++                "torque": 1.0 * 10e-4,
++                "collision": 1.0 * 10e-5,
++            }
++
++        # RSL-RL 中一次 policy iteration 大约对应 num_steps_per_env 个 env step
++        steps_per_iter = getattr(self.cfg, "curriculum_steps_per_iter", 16)
++        cur_iter = self.global_env_step / max(1, steps_per_iter)
++
++        quality_start_iter = getattr(self.cfg, "quality_start_iter", 500)
++        quality_end_iter = getattr(self.cfg, "quality_end_iter", 1000)
++
++        # 主任务权重：核奖励版本下不要再用 sym=100
++        w_rot = 10e-3
++        w_sym = 0.5 * 10e-3
++        w_tan = 1.0 * 10e-5
++        w_dropped = 1.0
++        w_omega = 0.5 * 10e-4
++        w_axis = 0.5 * 10e-2
++
++        # 动作质量课程：从 quality_start_iter 到 quality_end_iter 平滑打开
++        q = self._smooth_ramp(cur_iter, quality_start_iter, quality_end_iter)
++
++        # 前期保留一点动作平滑，避免完全乱抖；后期逐渐增强
++        w_smooth = 0.5 * 10e-6
++        w_torque = 1.0 * 10e-4
++
++        # 碰撞奖励前期关闭，后期逐渐打开
++        w_collision = q * 10e-5
++
++        return {
++            "rot": w_rot,
++            "sym": w_sym,
++            "tan": w_tan,
++            "dropped": w_dropped,
++            "omega": w_omega,
++            "axis": w_axis,
++            "smooth": w_smooth,
++            "torque": w_torque,
++            "collision": w_collision,
++        }
++
++    def _get_rewards(self) -> torch.Tensor:
++
++        cur_w = self._get_curriculum_weights()
++        # -------- 基础变量 --------
++        ball1_pos = self.ball1.data.root_pos_w - self.scene.env_origins
++        ball2_pos = self.ball2.data.root_pos_w - self.scene.env_origins
++        ball1_lin_vel = self.ball1.data.root_lin_vel_w
++        ball2_lin_vel = self.ball2.data.root_lin_vel_w
++
++        radius = self.cfg.ball_radius
++        center = self.rot_center
++        axis = self.rot_axis  # (1, 3)
++
++        # -------- 1. 半径约束 --------
++        vec1 = ball1_pos - center
++        vec2 = ball2_pos - center
++        dist1 = vec1.norm(dim=-1)
++        dist2 = vec2.norm(dim=-1)
++        rew_radius = -((dist1 - radius) ** 2 + (dist2 - radius) ** 2)
++        r_rot = cur_w["rot"] * rew_radius
++
++        # -------- 2. 中心对称约束 --------
++        # symmetry_err = (ball1_pos + ball2_pos - 2 * center).norm(dim=-1)
++        # rew_symmetry = -(symmetry_err ** 2)
++        # r_sym = self.cfg.w_symmetry * rew_symmetry
++        p1 = ball1_pos - center
++        p2 = ball2_pos - center
++        # 轴向 / 垂直分解
++        p1_axis = (p1 * axis).sum(dim=-1, keepdim=True)
++        p2_axis = (p2 * axis).sum(dim=-1, keepdim=True)
++        p1_perp = p1 - p1_axis * axis
++        p2_perp = p2 - p2_axis * axis
++        # 2.1. 中心对称（原有）
++        sym_center_err = (ball1_pos + ball2_pos - 2 * center).norm(dim=-1)
++        rew_sym_center = -(sym_center_err**2)
++        # 2.2. 轴向位置一致
++        sym_axis_err = (p1_axis - p2_axis).squeeze(-1)
++        rew_sym_axis = -(sym_axis_err**2)
++        # 2.3. 垂直镜像对称
++        sym_perp_err = (p1_perp + p2_perp).norm(dim=-1)
++        rew_sym_perp = -(sym_perp_err**2)
++        rew_symmetry = rew_sym_center + 10 * rew_sym_perp
++        r_sym = cur_w["sym"] * rew_symmetry
++
++        # -------- 3. 切向约束（速度与径向垂直）--------
++        # 使用点乘判断是否垂直
++        dot1 = (ball1_lin_vel * vec1).sum(dim=-1)
++        dot2 = (ball2_lin_vel * vec2).sum(dim=-1)
++        norm_vel1 = ball1_lin_vel.norm(dim=-1)
++        norm_vel2 = ball2_lin_vel.norm(dim=-1)
++        norm_vec1 = vec1.norm(dim=-1)
++        norm_vec2 = vec2.norm(dim=-1)
++
++        tangential_err1 = torch.abs(dot1) / (norm_vel1 * norm_vec1 + 1e-6)
++        tangential_err2 = torch.abs(dot2) / (norm_vel2 * norm_vec2 + 1e-6)
++        rew_tangential = -(tangential_err1**2 + tangential_err2**2)
++        r_tan = cur_w["tan"] * rew_tangential
++
++        # -------- 4. 绕轴方向约束 --------
++        desired_v1 = torch.cross(axis, vec1, dim=-1)
++        desired_v2 = torch.cross(axis, vec2, dim=-1)
++
++        desired_v1 = desired_v1 / (desired_v1.norm(dim=-1, keepdim=True) + 1e-6)
++        desired_v2 = desired_v2 / (desired_v2.norm(dim=-1, keepdim=True) + 1e-6)
++
++        v1_norm = ball1_lin_vel / (norm_vel1.unsqueeze(-1) + 1e-6)
++        v2_norm = ball2_lin_vel / (norm_vel2.unsqueeze(-1) + 1e-6)
++
++        rew_axis = (v1_norm * desired_v1).sum(dim=-1) + (v2_norm * desired_v2).sum(dim=-1)
++        r_axis = cur_w["axis"] * rew_axis
++
++        # ---------------- 6. 掉落惩罚 ----------------
++        obj_ball1_z = self.ball1.data.root_pos_w[:, 2]
++        obj_ball2_z = self.ball2.data.root_pos_w[:, 2]
++        terminated = (obj_ball1_z < self.cfg.drop_height_threshold + 0.005) | (
++            obj_ball2_z < self.cfg.drop_height_threshold + 0.005
++        )
++        dropped_now = terminated & (self.episode_length_buf > 0)  # 刚掉落的那一步”给惩罚（避免连续给很多步）
++        r_dropped = -dropped_now.float()
++        r_dropped = cur_w["dropped"] * r_dropped
++
++        # ---------------- 7. 关节平滑惩罚（动作变化） ----------------
++        action_diff = self.raw_actions - self.raw_prev_actions
++        r_smooth = -torch.sum(action_diff**2, dim=-1)
++        r_smooth = cur_w["smooth"] * r_smooth
++
++        # ---------------- 8. 速度奖励 ----------------
++        r1 = vec1  # ball1_pos - center
++        r2 = vec2  # ball2_pos - center
++        # 去掉 r 在 axis 方向上的分量 -> 投影到垂直于 axis 的平面
++        r1_parallel = (r1 * axis).sum(dim=-1, keepdim=True) * axis  # (N,3)
++        r2_parallel = (r2 * axis).sum(dim=-1, keepdim=True) * axis
++        r1_perp = r1 - r1_parallel
++        r2_perp = r2 - r2_parallel
++        r1_perp_norm_sq = (r1_perp * r1_perp).sum(dim=-1)  # |r_perp|^2
++        r2_perp_norm_sq = (r2_perp * r2_perp).sum(dim=-1)
++        # axis · (r × v) ，为绕该轴的转动“力矩”类似量
++        # 注意 cross 的顺序：r × v
++        cross1 = torch.cross(r1, ball1_lin_vel, dim=-1)
++        cross2 = torch.cross(r2, ball2_lin_vel, dim=-1)
++        axis_dot_cross1 = (axis * cross1).sum(dim=-1)
++        axis_dot_cross2 = (axis * cross2).sum(dim=-1)
++        # 角速度（正负表示绕轴方向）
++        omega1 = axis_dot_cross1 / (r1_perp_norm_sq + 1e-6)
++        omega2 = axis_dot_cross2 / (r2_perp_norm_sq + 1e-6)
++
++        rew_omega = torch.abs(omega1 + omega2)
++        r_omega = cur_w["omega"] * rew_omega
++
++        # ---------------- 9. 关节力矩惩罚（基础款） ----------------
++        tau = self.robot.root_physx_view.get_link_incoming_joint_force()  # [N_env, N_link, 6]
++        f = tau[..., :3]  # force
++        m = tau[..., 3:]  # torque
++        f_norm = torch.linalg.norm(f, dim=-1)  # [N_env, N_link]
++        m_norm = torch.linalg.norm(m, dim=-1)  # [N_env, N_link]
++        # print("norms", f_norm.sum(dim=-1), m_norm.sum(dim=-1))
++        # 超参数：按任务调
++        wf = 1e-2  # force 权重
++        wm = 1e-1  # torque 权重
++        penalty_per_link = wf * f_norm + wm * m_norm  # [N_env, N_link]
++        penalty = penalty_per_link.sum(dim=-1)  # [N_env]
++        r_torque = -cur_w["torque"] * penalty
++
++        # ---------------- 10. 指间碰撞惩罚 ----------------
++        collision_penalty = torch.zeros(self.num_envs, 1, device=self.device)
++        for name in self.cfg.ft_names:
++            force_data = self.scene.sensors[name].data.net_forces_w  # [num_envs, 1, 3]
++            force_norm = torch.linalg.norm(force_data, dim=-1)  # [num_envs, 1]
++            collision_penalty += force_norm  # [num_envs, 1]
++            # print(f"{name}: {force_norm}")
++            # print(f"{name}: {force_norm.shape}")
++        collision_penalty = collision_penalty.sum(dim=-1)
++        # print(f"{name}: {collision_penalty.shape}")
++        r_collision = -cur_w["collision"] * collision_penalty
+ 
++        # reward = r_sym  * 100 + r_dropped + r_omega + r_axis
++        reward = r_rot + r_sym * 100 + r_tan + r_dropped + r_axis + r_smooth + r_torque + r_omega + r_collision
++        # r_rot 接近 0  → 球基本保持在目标半径附近
++        # r_sym 接近 0  → 双球几何结构基本保持住
++        # r_tan 接近 0  → 速度方向基本没有明显径向乱飞
++        self.extras["log"]["r_rot"] = r_rot
++        self.extras["log"]["r_sym"] = r_sym
++        self.extras["log"]["r_tan"] = r_tan
++        self.extras["log"]["r_axis"] = r_axis
++        self.extras["log"]["r_dropped"] = r_dropped
++        self.extras["log"]["r_smooth"] = r_smooth
++        self.extras["log"]["r_omega"] = r_omega
++        self.extras["log"]["r_torque"] = r_torque
++        self.extras["log"]["r_collision"] = r_collision
++        self.extras["log"]["total_reward"] = reward
+ 
+-@torch.jit.script
+-def compute_rewards(
+-    rew_scale_alive: float,
+-    rew_scale_terminated: float,
+-    rew_scale_pole_pos: float,
+-    rew_scale_cart_vel: float,
+-    rew_scale_pole_vel: float,
+-    pole_pos: torch.Tensor,
+-    pole_vel: torch.Tensor,
+-    cart_pos: torch.Tensor,
+-    cart_vel: torch.Tensor,
+-    reset_terminated: torch.Tensor,
+-):
+-    rew_alive = rew_scale_alive * (1.0 - reset_terminated.float())
+-    rew_termination = rew_scale_terminated * reset_terminated.float()
+-    rew_pole_pos = rew_scale_pole_pos * torch.sum(torch.square(pole_pos).unsqueeze(dim=1), dim=-1)
+-    rew_cart_vel = rew_scale_cart_vel * torch.sum(torch.abs(cart_vel).unsqueeze(dim=1), dim=-1)
+-    rew_pole_vel = rew_scale_pole_vel * torch.sum(torch.abs(pole_vel).unsqueeze(dim=1), dim=-1)
+-    total_reward = rew_alive + rew_termination + rew_pole_pos + rew_cart_vel + rew_pole_vel
+-    return total_reward
+\ No newline at end of file
++        return reward
+diff --git a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py
+index 1673e82..4f9ba1f 100644
+--- a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py
++++ b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py
+@@ -3,46 +3,311 @@
+ #
+ # SPDX-License-Identifier: BSD-3-Clause
+ 
+-from isaaclab_assets.robots.cartpole import CARTPOLE_CFG
+-
+-from isaaclab.assets import ArticulationCfg
+-from isaaclab.envs import DirectRLEnvCfg
++import isaaclab.sim as sim_utils
++from isaaclab.assets import ArticulationCfg, RigidObjectCfg
++from isaaclab.envs import DirectRLEnvCfg, ViewerCfg
+ from isaaclab.scene import InteractiveSceneCfg
+-from isaaclab.sim import SimulationCfg
++from isaaclab.sensors import ContactSensorCfg
++from isaaclab.sim import SimulationCfg, PhysxCfg
++from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg
+ from isaaclab.utils import configclass
+ 
++from .delto_cfg import TESOLLO_CFG
++
+ 
+ @configclass
+-class DeltoWalnutHcyEnvCfg(DirectRLEnvCfg):
+-    # env
+-    decimation = 2
+-    episode_length_s = 5.0
+-    # - spaces definition
+-    action_space = 1
+-    observation_space = 4
+-    state_space = 0
+-
+-    # simulation
+-    sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation)
+-
+-    # robot(s)
+-    robot_cfg: ArticulationCfg = CARTPOLE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+-
+-    # scene
+-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=4.0, replicate_physics=True)
+-
+-    # custom parameters/scales
+-    # - controllable joint
+-    cart_dof_name = "slider_to_cart"
+-    pole_dof_name = "cart_to_pole"
+-    # - action scale
+-    action_scale = 100.0  # [N]
+-    # - reward scales
+-    rew_scale_alive = 1.0
+-    rew_scale_terminated = -2.0
+-    rew_scale_pole_pos = -1.0
+-    rew_scale_cart_vel = -0.01
+-    rew_scale_pole_vel = -0.005
+-    # - reset states/conditions
+-    initial_pole_angle_range = [-0.25, 0.25]  # pole angle sample range on reset [rad]
+-    max_cart_pos = 3.0  # reset if cart exceeds this position [m]
+\ No newline at end of file
++class DeltoWalnutEnvCfg(DirectRLEnvCfg):
++    # 环境配置参数
++    decimation = 4  # 环境决策频率，控制仿真步长
++    if decimation == 2:
++        action_scale = 0.5
++        episode_length_s = 10.0  # 每个episode的持续时间（秒）
++    if decimation == 4:
++        action_scale = 0.5  # 1
++        episode_length_s = 10.0  # 每个episode的持续时间（秒）
++    if decimation == 8:
++        action_scale = 0.15  # 1
++        episode_length_s = 20.0  # 每个episode的持续时间（秒）
++    # 观察空间和动作空间配置
++    action_space = 20  # 动作空间维度
++    observation_space = 79  # 观察空间维度
++    state_space = 0  # 状态空间维度（0表示不使用状态空间）
++    drop_height_threshold: float = 0.1  # 物体掉落高度阈值，用于判断是否掉落
++
++    # 超参数在_get_curriculum_weights调节
++    w_radius = 1.0
++    w_symmetry = 1.0
++    w_omega = 1.0
++    w_axis = 1.0
++    w_dropped = 1.0
++    w_tangential = 1.0
++    w_joint_smooth = 1.0
++    w_torque = 1.0
++    w_collision = 1.0
++
++    # ---------------- Kernel reward parameters ----------------
++    radius_kernel_sigma = 0.01  # 半径误差容忍，约 5 mm
++    sym_center_kernel_sigma = 0.015  # 中心对称误差容忍，约 8 mm
++    sym_axis_kernel_sigma = 0.015  # 轴向误差容忍，约 8 mm
++    sym_perp_kernel_sigma = 0.015  # 垂直镜像误差容忍，约 8 mm
++    axis_kernel_sigma = 0.5
++    tan_kernel_sigma = 0.3  # tangential_err 范围大约 [0, 1]
++    omega_kernel_sigma = 1.0  # 角速度饱和尺度
++    speed_kernel_sigma = 0.05  # 速度门控尺度，单位大致 m/s
++
++    # curriculum learning
++    enable_curriculum = True
++    # RSL-RL 中每个 iteration 采样 num_steps_per_env 步
++    # 你之前设置的是 num_steps_per_env = 16
++    curriculum_steps_per_iter = 16
++    # 动作质量优化从第多少个 iteration 开始
++    quality_start_iter = 500
++    # 动作质量优化到第多少个 iteration 完全启用
++    quality_end_iter = 1000
++    # 对齐 rl_games 中 reward_shaper.scale_value = 0.1
++    reward_scale = 0.1
++
++    # 仿真配置
++    sim: SimulationCfg = SimulationCfg(
++        dt=1 / 120,
++        render_interval=1,
++        physx=PhysxCfg(
++            gpu_collision_stack_size=2**28,  # 268 MB，足够覆盖日志里的 116 MB
++        ),
++        physics_material=RigidBodyMaterialCfg(
++            static_friction=0.3,  # 静摩擦系数
++            dynamic_friction=0.3,  # 动摩擦系数
++        ),
++    )
++
++    # ============================
++    # 视频录制视角配置
++    # ============================
++    viewer: ViewerCfg = ViewerCfg(
++        origin_type="env",
++        env_index=0,
++        # 相机位置：斜前上方近景
++        eye=(0.30, -0.24, 0.36),
++        # 看向两个球/手指接触区域
++        lookat=(0.158, -0.006, 0.256),
++        resolution=(1920, 1080),
++    )
++
++    # 机器人配置
++    robot_cfg: ArticulationCfg = TESOLLO_CFG.replace(prim_path="/World/envs/env_.*/Robot")  # 机器人配置
++
++    # 手部关节名称列表
++    hand_joint_names = [
++        "rj_dg_1_1",
++        "rj_dg_1_2",
++        "rj_dg_1_3",
++        "rj_dg_1_4",  # 第1个手指的关节
++        "rj_dg_2_1",
++        "rj_dg_2_2",
++        "rj_dg_2_3",
++        "rj_dg_2_4",  # 第2个手指的关节
++        "rj_dg_3_1",
++        "rj_dg_3_2",
++        "rj_dg_3_3",
++        "rj_dg_3_4",  # 第3个手指的关节
++        "rj_dg_4_1",
++        "rj_dg_4_2",
++        "rj_dg_4_3",
++        "rj_dg_4_4",  # 第4个手指的关节
++        "rj_dg_5_1",
++        "rj_dg_5_2",
++        "rj_dg_5_3",
++        "rj_dg_5_4",  # 第5个手指的关节
++    ]
++
++    # 手部初始位置配置（用于初始化机器人位置）
++    hand_position = [
++        0.2,
++        -0.1,
++        0.0,
++        0.1,
++        0.0,  # 第1个手指的初始位置
++        -0.35,
++        0.3,
++        0.3,
++        0.3,
++        0.0,  # 第2个手指的初始位置
++        1.2,
++        1.0,
++        1.0,
++        1.0,
++        1.3,  # 第3个手指的初始位置
++        0.1,
++        1.2,
++        1.2,
++        1.2,
++        1.57,
++    ]  # 第4个手指的初始位置
++
++    # 手部关节限制
++    hand_lower_limits = [
++        0,
++        -24,
++        -30,
++        -35,
++        0,
++        -30,
++        0,
++        0,
++        0,
++        -15,
++        20,
++        25,
++        25,
++        20,
++        0,
++        0,
++        68,
++        68,
++        68,
++        89,
++    ]
++    hand_upper_limits = [
++        30,
++        35,
++        30,
++        24,
++        60,
++        0,
++        70,
++        30,
++        30,
++        30,
++        90,
++        90,
++        90,
++        90,
++        90,
++        20,
++        70,
++        70,
++        70,
++        90,
++    ]
++
++    # 力传感器名称列表
++    ft_names = [
++        "rl_dg_1_4",  # 第1个手指的力传感器
++        "rl_dg_2_4",  # 第2个手指的力传感器
++        "rl_dg_3_4",  # 第3个手指的力传感器
++        "rl_dg_4_4",  # 第4个手指的力传感器
++        "rl_dg_5_4",  # 第5个手指的力传感器
++    ]
++
++    # 接触传感器配置
++    contact_names = [
++        [
++            "rl_dg_2_3",
++            "rl_dg_2_4",
++            "rl_dg_3_3",
++            "rl_dg_3_4",
++            "rl_dg_4_3",
++            "rl_dg_4_4",
++            "rl_dg_5_3",
++            "rl_dg_5_4",
++        ],
++        [
++            "rl_dg_1_3",
++            "rl_dg_1_4",
++            "rl_dg_3_3",
++            "rl_dg_3_4",
++            "rl_dg_4_3",
++            "rl_dg_4_4",
++            "rl_dg_5_3",
++            "rl_dg_5_4",
++        ],
++        [
++            "rl_dg_2_3",
++            "rl_dg_2_4",
++            "rl_dg_1_3",
++            "rl_dg_1_4",
++            "rl_dg_4_3",
++            "rl_dg_4_4",
++            "rl_dg_5_3",
++            "rl_dg_5_4",
++        ],
++        [
++            "rl_dg_2_3",
++            "rl_dg_2_4",
++            "rl_dg_3_3",
++            "rl_dg_3_4",
++            "rl_dg_1_3",
++            "rl_dg_1_4",
++            "rl_dg_5_3",
++            "rl_dg_5_4",
++        ],
++        [
++            "rl_dg_2_3",
++            "rl_dg_2_4",
++            "rl_dg_3_3",
++            "rl_dg_3_4",
++            "rl_dg_4_3",
++            "rl_dg_4_4",
++            "rl_dg_1_3",
++            "rl_dg_1_4",
++        ],
++    ]
++
++    # 创建接触传感器配置字典
++    contact_sensors = {}
++    for index, name in enumerate(ft_names):
++        contact_sensors[name] = ContactSensorCfg(
++            prim_path=f"/World/envs/env_.*/Robot/{name}",  # 传感器路径
++            update_period=0.0,  # 更新周期
++            history_length=1,  # 历史长度
++            debug_vis=False,  # 是否显示调试可视化
++            filter_prim_paths_expr=[
++                f"/World/envs/env_.*/Robot/{contact_name}" for contact_name in contact_names[index]
++            ],  # 过滤的传感器路径表达式
++            track_air_time=False,  # 是否跟踪空中时间
++        )
++
++    # 球体半径和质量配置
++    ball_radius = 0.02  # 球体半径
++    mass = 0.02  # 球体质量
++
++    # 第一个球体配置
++    ball1_cfg: RigidObjectCfg = RigidObjectCfg(
++        prim_path="/World/envs/env_.*/ball1",  # 球体路径
++        spawn=sim_utils.SphereCfg(  # 球体生成配置
++            radius=ball_radius,  # 球体半径
++            rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # 刚体属性
++            physics_material=sim_utils.RigidBodyMaterialCfg(),  # 物理材质
++            mass_props=sim_utils.MassPropertiesCfg(mass=mass),  # 质量属性
++            collision_props=sim_utils.CollisionPropertiesCfg(),  # 碰撞属性
++            visual_material=sim_utils.PreviewSurfaceCfg(  # 可视化材质
++                diffuse_color=(1.0, 0.0, 0.0),  # 漫反射颜色（红色）
++                metallic=0.1,  # 金属度
++            ),
++        ),
++        init_state=RigidObjectCfg.InitialStateCfg(  # 初始状态
++            pos=(0.15691, 0.0133, 0.25702),  # 初始位置（对应tesollo 45度）
++        ),
++    )
++
++    # 第二个球体配置
++    ball2_cfg: RigidObjectCfg = RigidObjectCfg(
++        prim_path="/World/envs/env_.*/ball2",  # 球体路径
++        spawn=sim_utils.SphereCfg(  # 球体生成配置
++            radius=ball_radius,  # 球体半径
++            rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # 刚体属性
++            physics_material=sim_utils.RigidBodyMaterialCfg(),  # 物理材质
++            mass_props=sim_utils.MassPropertiesCfg(mass=mass),  # 质量属性
++            collision_props=sim_utils.CollisionPropertiesCfg(),  # 碰撞属性
++            visual_material=sim_utils.PreviewSurfaceCfg(  # 可视化材质
++                diffuse_color=(1.0, 0.0, 0.0),  # 漫反射颜色（红色）
++                metallic=0.1,  # 金属度
++            ),
++        ),
++        init_state=RigidObjectCfg.InitialStateCfg(  # 初始状态
++            pos=(0.15916, -0.0266, 0.25511),  # 初始位置（对应tesollo 45度）
++        ),
++    )
++
++    # 场景配置
++    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=512, env_spacing=0.75, replicate_physics=True)  # 场景配置
+diff --git a/source/delto_walnut_hcy/pyproject.toml b/source/delto_walnut_hcy/pyproject.toml
+index d90ac35..e749d7a 100644
+--- a/source/delto_walnut_hcy/pyproject.toml
++++ b/source/delto_walnut_hcy/pyproject.toml
+@@ -1,3 +1,3 @@
+ [build-system]
+ requires = ["setuptools", "wheel", "toml"]
+-build-backend = "setuptools.build_meta"
++build-backend = "setuptools.build_meta"
+\ No newline at end of file

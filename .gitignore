@@ -2,7 +2,7 @@
 **/cmake-build*/
 **/build*/
 **/*.so
-**/*.log*
+# **/*.log*
 
 # Omniverse
 **/*.dmp
@@ -37,7 +37,7 @@ docker/.container.cfg
 # Outputs
 **/output/*
 **/outputs/*
-**/videos/*
+# **/videos/*
 **/wandb/*
 **/.neptune/*
 docker/artifacts/
@@ -55,7 +55,7 @@ _build
 
 # RL-Games
 **/runs/*
-**/logs/*
+# **/logs/*
 **/recordings/*
 
 # Pre-Trained Checkpoints
@@ -69,3 +69,5 @@ tests/
 
 # Docker history
 .isaac-lab-docker-history
+
+model_*.pt

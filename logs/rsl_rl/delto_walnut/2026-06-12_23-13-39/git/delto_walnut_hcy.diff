@@ -1,0 +1,26 @@
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py
+index f0d9d7b..590b06f 100644
+--- a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py
++++ b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py
+@@ -18,7 +18,7 @@ from .delto_cfg import TESOLLO_CFG
+ @configclass
+ class DeltoWalnutEnvCfg(DirectRLEnvCfg):
+     # 环境配置参数
+-    decimation = 4  # 环境决策频率，控制仿真步长
++    decimation = 2  # 环境决策频率，控制仿真步长
+     if decimation == 2:
+         action_scale = 0.5
+         episode_length_s = 10.0  # 每个episode的持续时间（秒）

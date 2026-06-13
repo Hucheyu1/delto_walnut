@@ -18,7 +18,7 @@ from .delto_cfg import TESOLLO_CFG
 @configclass
 class DeltoWalnutEnvCfg(DirectRLEnvCfg):
     # 环境配置参数
-    decimation = 2  # 环境决策频率，控制仿真步长
+    decimation = 8  # 环境决策频率，控制仿真步长
     if decimation == 2:
         action_scale = 0.5
         episode_length_s = 10.0  # 每个episode的持续时间（秒）
@@ -26,7 +26,7 @@ class DeltoWalnutEnvCfg(DirectRLEnvCfg):
         action_scale = 0.5  # 1
         episode_length_s = 10.0  # 每个episode的持续时间（秒）
     if decimation == 8:
-        action_scale = 0.15  # 1
+        action_scale = 0.5  # 低控制频率下保留足够动作幅度，否则小球难以起转
         episode_length_s = 20.0  # 每个episode的持续时间（秒）
     # 观察空间和动作空间配置
     action_space = 20  # 动作空间维度

@@ -1,0 +1,302 @@
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   logs/rsl_rl/delto_walnut/note.txt
+	modified:   source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env.py
+	modified:   source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	logs/rsl_rl/delto_walnut/2026-06-13_15-11-17/
+	logs/rsl_rl/delto_walnut/2026-06-13_19-33-40/
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/logs/rsl_rl/delto_walnut/note.txt b/logs/rsl_rl/delto_walnut/note.txt
+index f3e51c5..4167ef9 100644
+--- a/logs/rsl_rl/delto_walnut/note.txt
++++ b/logs/rsl_rl/delto_walnut/note.txt
+@@ -1,2 +1,3 @@
+ 6-12-21-26: 30HZ 频率
+-6-12-23-13：60HZ 频率
+\ No newline at end of file
++6-12-23-13：60HZ 频率
++6-13-15-11：15HZ 频率, 修改了奖励函数
+\ No newline at end of file
+diff --git a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env.py b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env.py
+index 43aa520..096a7de 100644
+--- a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env.py
++++ b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env.py
+@@ -119,19 +119,19 @@ class DeltoWalnutEnv(DirectRLEnv):
+         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
+         light_cfg.func("/World/Light", light_cfg)
+         # add contact sensors
+-        for name in self.cfg.ft_names:
++        for name in self.cfg.collision_sensor_names:
+             self.scene.sensors[name] = ContactSensor(self.cfg.contact_sensors[name])
+         # -------- 底层物理碰撞过滤 --------
+-        for i in range(self.num_envs):
+-            path_ball1 = f"/World/envs/env_{i}/ball1"
+-            path_ball2 = f"/World/envs/env_{i}/ball2"
++        for env_id in range(self.num_envs):
++            path_ball1 = f"/World/envs/env_{env_id}/ball1"
++            path_ball2 = f"/World/envs/env_{env_id}/ball2"
+             # 获取指尖 (r1c_sphere 到 r5c_sphere) 的 USD 路径
+             finger_ball_path = list()
+-            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r1c_sphere")
+-            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r2c_sphere")
+-            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r3c_sphere")
+-            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r4c_sphere")
+-            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r5c_sphere")
++            finger_ball_path.append(f"/World/envs/env_{env_id}/Robot/r1c_sphere")
++            finger_ball_path.append(f"/World/envs/env_{env_id}/Robot/r2c_sphere")
++            finger_ball_path.append(f"/World/envs/env_{env_id}/Robot/r3c_sphere")
++            finger_ball_path.append(f"/World/envs/env_{env_id}/Robot/r4c_sphere")
++            finger_ball_path.append(f"/World/envs/env_{env_id}/Robot/r5c_sphere")
+             prim_ball1 = self.sim.stage.GetPrimAtPath(path_ball1)
+             prim_ball2 = self.sim.stage.GetPrimAtPath(path_ball2)
+             # print(f"prim_ball1: {prim_ball1}")
+@@ -143,9 +143,21 @@ class DeltoWalnutEnv(DirectRLEnv):
+                 ball2_api = UsdPhysics.FilteredPairsAPI.Apply(prim_ball2)
+                 ball1_rel = ball1_api.CreateFilteredPairsRel()
+                 ball2_rel = ball2_api.CreateFilteredPairsRel()
+-                for i in range(len(finger_ball_path)):
+-                    ball1_rel.AddTarget(finger_ball_path[i])
+-                    ball2_rel.AddTarget(finger_ball_path[i])
++                for finger_path in finger_ball_path:
++                    ball1_rel.AddTarget(finger_path)
++                    ball2_rel.AddTarget(finger_path)
++
++            # 同一手指相邻 link 的碰撞属于结构邻接干涉，直接在 PhysX 层过滤。
++            for link_a, link_b in self.cfg.adjacent_link_collision_filter_pairs:
++                path_a = f"/World/envs/env_{env_id}/Robot/{link_a}"
++                path_b = f"/World/envs/env_{env_id}/Robot/{link_b}"
++                prim_a = self.sim.stage.GetPrimAtPath(path_a)
++                prim_b = self.sim.stage.GetPrimAtPath(path_b)
++                if prim_a.IsValid() and prim_b.IsValid():
++                    rel_a = UsdPhysics.FilteredPairsAPI.Apply(prim_a).CreateFilteredPairsRel()
++                    rel_b = UsdPhysics.FilteredPairsAPI.Apply(prim_b).CreateFilteredPairsRel()
++                    rel_a.AddTarget(path_b)
++                    rel_b.AddTarget(path_a)
+ 
+     def _pre_physics_step(self, actions: torch.Tensor) -> None:
+         self.global_env_step += 1
+@@ -291,11 +303,11 @@ class DeltoWalnutEnv(DirectRLEnv):
+                 "sym": 0.5 * 10e-3,
+                 "tan": 1.0 * 10e-5,
+                 "dropped": 1.0,
+-                "omega": 0.5 * 10e-4,
++                "omega": 2.0 * 10e-4,
+                 "axis": 0.5 * 10e-2,
+                 "smooth": 0.5 * 10e-6,
+                 "torque": 1.0 * 10e-4,
+-                "collision": 1.0 * 10e-5,
++                "collision": 5.0e-4,
+             }
+ 
+         # RSL-RL 中一次 policy iteration 大约对应 num_steps_per_env 个 env step
+@@ -310,7 +322,7 @@ class DeltoWalnutEnv(DirectRLEnv):
+         w_sym = 0.5 * 10e-3
+         w_tan = 1.0 * 10e-5
+         w_dropped = 1.0
+-        w_omega = 0.5 * 10e-4
++        w_omega = 2.0 * 10e-4
+         w_axis = 0.5 * 10e-2
+ 
+         # 动作质量课程：从 quality_start_iter 到 quality_end_iter 平滑打开
+@@ -320,8 +332,8 @@ class DeltoWalnutEnv(DirectRLEnv):
+         w_smooth = 0.5 * 10e-6
+         w_torque = 1.0 * 10e-4
+ 
+-        # 碰撞奖励前期关闭，后期逐渐打开
+-        w_collision = q * 10e-5
++        # 手指自碰撞从一开始就轻微惩罚，后期增强，避免先学会“互相顶住”再难以改掉。
++        w_collision = (0.25 + 0.75 * q) * 5.0e-4
+ 
+         return {
+             "rot": w_rot,
+@@ -403,7 +415,12 @@ class DeltoWalnutEnv(DirectRLEnv):
+         v1_norm = ball1_lin_vel / (norm_vel1.unsqueeze(-1) + 1e-6)
+         v2_norm = ball2_lin_vel / (norm_vel2.unsqueeze(-1) + 1e-6)
+ 
+-        rew_axis = (v1_norm * desired_v1).sum(dim=-1) + (v2_norm * desired_v2).sum(dim=-1)
++        # 速度太小时不奖励“方向正确”，避免低频策略停在几乎不转的局部最优。
++        speed_gate1 = 1.0 - torch.exp(-((norm_vel1 / self.cfg.speed_kernel_sigma) ** 2))
++        speed_gate2 = 1.0 - torch.exp(-((norm_vel2 / self.cfg.speed_kernel_sigma) ** 2))
++        rew_axis = speed_gate1 * (v1_norm * desired_v1).sum(dim=-1) + speed_gate2 * (
++            v2_norm * desired_v2
++        ).sum(dim=-1)
+         r_axis = cur_w["axis"] * rew_axis
+ 
+         # ---------------- 6. 掉落惩罚 ----------------
+@@ -441,7 +458,7 @@ class DeltoWalnutEnv(DirectRLEnv):
+         omega1 = axis_dot_cross1 / (r1_perp_norm_sq + 1e-6)
+         omega2 = axis_dot_cross2 / (r2_perp_norm_sq + 1e-6)
+ 
+-        rew_omega = torch.abs(omega1 + omega2)
++        rew_omega = torch.relu(omega1) + torch.relu(omega2)
+         r_omega = cur_w["omega"] * rew_omega
+ 
+         # ---------------- 9. 关节力矩惩罚（基础款） ----------------
+@@ -459,14 +476,14 @@ class DeltoWalnutEnv(DirectRLEnv):
+         r_torque = -cur_w["torque"] * penalty
+ 
+         # ---------------- 10. 指间碰撞惩罚 ----------------
+-        collision_penalty = torch.zeros(self.num_envs, 1, device=self.device)
+-        for name in self.cfg.ft_names:
++        collision_penalty = torch.zeros(self.num_envs, device=self.device)
++        for name in self.cfg.collision_sensor_names:
+             force_data = self.scene.sensors[name].data.net_forces_w  # [num_envs, 1, 3]
+             force_norm = torch.linalg.norm(force_data, dim=-1)  # [num_envs, 1]
+-            collision_penalty += force_norm  # [num_envs, 1]
++            collision_penalty += force_norm.squeeze(-1)  # [num_envs]
+             # print(f"{name}: {force_norm}")
+             # print(f"{name}: {force_norm.shape}")
+-        collision_penalty = collision_penalty.sum(dim=-1)
++        collision_penalty = 0.5 * collision_penalty  # 接触通常会被两个 link 的传感器各统计一次
+         # print(f"{name}: {collision_penalty.shape}")
+         r_collision = -cur_w["collision"] * collision_penalty
+ 
+diff --git a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py
+index 9e6d2fc..6a4b26c 100644
+--- a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py
++++ b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_env_cfg.py
+@@ -18,7 +18,7 @@ from .delto_cfg import TESOLLO_CFG
+ @configclass
+ class DeltoWalnutEnvCfg(DirectRLEnvCfg):
+     # 环境配置参数
+-    decimation = 2  # 环境决策频率，控制仿真步长
++    decimation = 4  # 环境决策频率，控制仿真步长
+     if decimation == 2:
+         action_scale = 0.5
+         episode_length_s = 10.0  # 每个episode的持续时间（秒）
+@@ -26,7 +26,7 @@ class DeltoWalnutEnvCfg(DirectRLEnvCfg):
+         action_scale = 0.5  # 1
+         episode_length_s = 10.0  # 每个episode的持续时间（秒）
+     if decimation == 8:
+-        action_scale = 0.15  # 1
++        action_scale = 0.5  # 低控制频率下保留足够动作幅度，否则小球难以起转
+         episode_length_s = 20.0  # 每个episode的持续时间（秒）
+     # 观察空间和动作空间配置
+     action_space = 20  # 动作空间维度
+@@ -190,79 +190,50 @@ class DeltoWalnutEnvCfg(DirectRLEnvCfg):
+         90,
+     ]
+ 
+-    # 力传感器名称列表
+-    ft_names = [
+-        "rl_dg_1_4",  # 第1个手指的力传感器
+-        "rl_dg_2_4",  # 第2个手指的力传感器
+-        "rl_dg_3_4",  # 第3个手指的力传感器
+-        "rl_dg_4_4",  # 第4个手指的力传感器
+-        "rl_dg_5_4",  # 第5个手指的力传感器
+-    ]
++    # 手指 link 名称，用于过滤结构性自碰撞和惩罚跨手指干涉。
++    finger_link_names = []
++    for finger_index in range(1, 6):
++        for joint_index in range(1, 5):
++            finger_link_names.append(f"rl_dg_{finger_index}_{joint_index}")
+ 
+-    # 接触传感器配置
+-    contact_names = [
+-        [
+-            "rl_dg_2_3",
+-            "rl_dg_2_4",
+-            "rl_dg_3_3",
+-            "rl_dg_3_4",
+-            "rl_dg_4_3",
+-            "rl_dg_4_4",
+-            "rl_dg_5_3",
+-            "rl_dg_5_4",
+-        ],
+-        [
+-            "rl_dg_1_3",
+-            "rl_dg_1_4",
+-            "rl_dg_3_3",
+-            "rl_dg_3_4",
+-            "rl_dg_4_3",
+-            "rl_dg_4_4",
+-            "rl_dg_5_3",
+-            "rl_dg_5_4",
+-        ],
+-        [
+-            "rl_dg_2_3",
+-            "rl_dg_2_4",
+-            "rl_dg_1_3",
+-            "rl_dg_1_4",
+-            "rl_dg_4_3",
+-            "rl_dg_4_4",
+-            "rl_dg_5_3",
+-            "rl_dg_5_4",
+-        ],
+-        [
+-            "rl_dg_2_3",
+-            "rl_dg_2_4",
+-            "rl_dg_3_3",
+-            "rl_dg_3_4",
+-            "rl_dg_1_3",
+-            "rl_dg_1_4",
+-            "rl_dg_5_3",
+-            "rl_dg_5_4",
+-        ],
+-        [
+-            "rl_dg_2_3",
+-            "rl_dg_2_4",
+-            "rl_dg_3_3",
+-            "rl_dg_3_4",
+-            "rl_dg_4_3",
+-            "rl_dg_4_4",
+-            "rl_dg_1_3",
+-            "rl_dg_1_4",
+-        ],
+-    ]
++    # 同一根手指的相邻 link 是机械结构邻接，不应该作为有意义的自碰撞接触参与求解。
++    adjacent_link_collision_filter_pairs = []
++    for finger_index in range(1, 6):
++        for joint_index in range(1, 4):
++            adjacent_link_collision_filter_pairs.append(
++                (f"rl_dg_{finger_index}_{joint_index}", f"rl_dg_{finger_index}_{joint_index + 1}")
++            )
++        adjacent_link_collision_filter_pairs.append((f"rl_dg_{finger_index}_4", f"r{finger_index}c_sphere"))
++
++    collision_sensor_names = finger_link_names
++    collision_filter_names = {}
++    for name in collision_sensor_names:
++        _, _, finger_id, joint_id = name.split("_")
++        joint_id = int(joint_id)
++        filtered_names = []
++        for other_name in finger_link_names:
++            if other_name == name:
++                continue
++
++            _, _, other_finger_id, other_joint_id = other_name.split("_")
++            other_joint_id = int(other_joint_id)
++            if other_finger_id == finger_id and abs(other_joint_id - joint_id) <= 1:
++                continue
++
++            filtered_names.append(other_name)
++
++        collision_filter_names[name] = filtered_names
+ 
+     # 创建接触传感器配置字典
+     contact_sensors = {}
+-    for index, name in enumerate(ft_names):
++    for name in collision_sensor_names:
+         contact_sensors[name] = ContactSensorCfg(
+             prim_path=f"/World/envs/env_.*/Robot/{name}",  # 传感器路径
+             update_period=0.0,  # 更新周期
+             history_length=1,  # 历史长度
+-            debug_vis=True,  # 是否显示调试可视化
++            debug_vis=False,  # 是否显示调试可视化
+             filter_prim_paths_expr=[
+-                f"/World/envs/env_.*/Robot/{contact_name}" for contact_name in contact_names[index]
++                f"/World/envs/env_.*/Robot/{contact_name}" for contact_name in collision_filter_names[name]
+             ],  # 过滤的传感器路径表达式
+             track_air_time=False,  # 是否跟踪空中时间
+         )

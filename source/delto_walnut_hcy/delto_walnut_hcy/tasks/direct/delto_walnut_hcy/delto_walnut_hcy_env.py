@@ -291,7 +291,7 @@ class DeltoWalnutEnv(DirectRLEnv):
                 "sym": 0.5 * 10e-3,
                 "tan": 1.0 * 10e-5,
                 "dropped": 1.0,
-                "omega": 0.5 * 10e-4,
+                "omega": 2.0 * 10e-4,
                 "axis": 0.5 * 10e-2,
                 "smooth": 0.5 * 10e-6,
                 "torque": 1.0 * 10e-4,
@@ -310,7 +310,7 @@ class DeltoWalnutEnv(DirectRLEnv):
         w_sym = 0.5 * 10e-3
         w_tan = 1.0 * 10e-5
         w_dropped = 1.0
-        w_omega = 0.5 * 10e-4
+        w_omega = 2.0 * 10e-4
         w_axis = 0.5 * 10e-2
 
         # 动作质量课程：从 quality_start_iter 到 quality_end_iter 平滑打开
@@ -403,7 +403,12 @@ class DeltoWalnutEnv(DirectRLEnv):
         v1_norm = ball1_lin_vel / (norm_vel1.unsqueeze(-1) + 1e-6)
         v2_norm = ball2_lin_vel / (norm_vel2.unsqueeze(-1) + 1e-6)
 
-        rew_axis = (v1_norm * desired_v1).sum(dim=-1) + (v2_norm * desired_v2).sum(dim=-1)
+        # 速度太小时不奖励“方向正确”，避免低频策略停在几乎不转的局部最优。
+        speed_gate1 = 1.0 - torch.exp(-((norm_vel1 / self.cfg.speed_kernel_sigma) ** 2))
+        speed_gate2 = 1.0 - torch.exp(-((norm_vel2 / self.cfg.speed_kernel_sigma) ** 2))
+        rew_axis = speed_gate1 * (v1_norm * desired_v1).sum(dim=-1) + speed_gate2 * (
+            v2_norm * desired_v2
+        ).sum(dim=-1)
         r_axis = cur_w["axis"] * rew_axis
 
         # ---------------- 6. 掉落惩罚 ----------------
@@ -441,7 +446,7 @@ class DeltoWalnutEnv(DirectRLEnv):
         omega1 = axis_dot_cross1 / (r1_perp_norm_sq + 1e-6)
         omega2 = axis_dot_cross2 / (r2_perp_norm_sq + 1e-6)
 
-        rew_omega = torch.abs(omega1 + omega2)
+        rew_omega = torch.relu(omega1) + torch.relu(omega2)
         r_omega = cur_w["omega"] * rew_omega
 
         # ---------------- 9. 关节力矩惩罚（基础款） ----------------

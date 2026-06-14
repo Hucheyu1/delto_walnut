@@ -16,7 +16,7 @@ from .delto_cfg import TESOLLO_CFG
 
 
 @configclass
-class DeltoWalnutEnvCfg(DirectRLEnvCfg):
+class DeltoWalnutCollisionEnvCfg(DirectRLEnvCfg):
     # 环境配置参数（已经集成到命令行参数中）
     decimation = 8  # 环境决策频率，控制仿真步长
     if decimation == 2:
@@ -190,79 +190,50 @@ class DeltoWalnutEnvCfg(DirectRLEnvCfg):
         90,
     ]
 
-    # 力传感器名称列表
-    ft_names = [
-        "rl_dg_1_4",  # 第1个手指的力传感器
-        "rl_dg_2_4",  # 第2个手指的力传感器
-        "rl_dg_3_4",  # 第3个手指的力传感器
-        "rl_dg_4_4",  # 第4个手指的力传感器
-        "rl_dg_5_4",  # 第5个手指的力传感器
-    ]
+    # 手指 link 名称，用于过滤结构性自碰撞和惩罚跨手指干涉。
+    finger_link_names = []
+    for finger_index in range(1, 6):
+        for joint_index in range(1, 5):
+            finger_link_names.append(f"rl_dg_{finger_index}_{joint_index}")
 
-    # 接触传感器配置
-    contact_names = [
-        [
-            "rl_dg_2_3",
-            "rl_dg_2_4",
-            "rl_dg_3_3",
-            "rl_dg_3_4",
-            "rl_dg_4_3",
-            "rl_dg_4_4",
-            "rl_dg_5_3",
-            "rl_dg_5_4",
-        ],
-        [
-            "rl_dg_1_3",
-            "rl_dg_1_4",
-            "rl_dg_3_3",
-            "rl_dg_3_4",
-            "rl_dg_4_3",
-            "rl_dg_4_4",
-            "rl_dg_5_3",
-            "rl_dg_5_4",
-        ],
-        [
-            "rl_dg_2_3",
-            "rl_dg_2_4",
-            "rl_dg_1_3",
-            "rl_dg_1_4",
-            "rl_dg_4_3",
-            "rl_dg_4_4",
-            "rl_dg_5_3",
-            "rl_dg_5_4",
-        ],
-        [
-            "rl_dg_2_3",
-            "rl_dg_2_4",
-            "rl_dg_3_3",
-            "rl_dg_3_4",
-            "rl_dg_1_3",
-            "rl_dg_1_4",
-            "rl_dg_5_3",
-            "rl_dg_5_4",
-        ],
-        [
-            "rl_dg_2_3",
-            "rl_dg_2_4",
-            "rl_dg_3_3",
-            "rl_dg_3_4",
-            "rl_dg_4_3",
-            "rl_dg_4_4",
-            "rl_dg_1_3",
-            "rl_dg_1_4",
-        ],
-    ]
+    # 同一根手指的相邻 link 是机械结构邻接，不应该作为有意义的自碰撞接触参与求解。
+    adjacent_link_collision_filter_pairs = []
+    for finger_index in range(1, 6):
+        for joint_index in range(1, 4):
+            adjacent_link_collision_filter_pairs.append(
+                (f"rl_dg_{finger_index}_{joint_index}", f"rl_dg_{finger_index}_{joint_index + 1}")
+            )
+        adjacent_link_collision_filter_pairs.append((f"rl_dg_{finger_index}_4", f"r{finger_index}c_sphere"))
+
+    collision_sensor_names = finger_link_names
+    collision_filter_names = {}
+    for name in collision_sensor_names:
+        _, _, finger_id, joint_id = name.split("_")
+        joint_id = int(joint_id)
+        filtered_names = []
+        for other_name in finger_link_names:
+            if other_name == name:
+                continue
+
+            _, _, other_finger_id, other_joint_id = other_name.split("_")
+            other_joint_id = int(other_joint_id)
+            if other_finger_id == finger_id and abs(other_joint_id - joint_id) <= 1:
+                continue
+
+            filtered_names.append(other_name)
+
+        collision_filter_names[name] = filtered_names
 
     # 创建接触传感器配置字典
     contact_sensors = {}
-    for index, name in enumerate(ft_names):
+    for name in collision_sensor_names:
         contact_sensors[name] = ContactSensorCfg(
             prim_path=f"/World/envs/env_.*/Robot/{name}",  # 传感器路径
             update_period=0.0,  # 更新周期
             history_length=1,  # 历史长度
             debug_vis=True,  # 是否显示调试可视化
             filter_prim_paths_expr=[
-                f"/World/envs/env_.*/Robot/{contact_name}" for contact_name in contact_names[index]
+                f"/World/envs/env_.*/Robot/{contact_name}" for contact_name in collision_filter_names[name]
             ],  # 过滤的传感器路径表达式
             track_air_time=False,  # 是否跟踪空中时间
         )

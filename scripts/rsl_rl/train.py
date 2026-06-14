@@ -32,6 +32,12 @@ parser.add_argument(
     help="Interval between video recordings (in steps).",
 )
 parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
+parser.add_argument(
+    "--decimation",
+    type=int,
+    default=None,
+    help="Override the environment decimation, e.g. 2=60Hz, 4=30Hz, 8=15Hz when sim.dt=1/120.",
+)
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument(
     "--agent",
@@ -137,6 +143,26 @@ torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = False
 
 
+def _apply_decimation_override(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg):
+    """Apply CLI decimation override before the environment is created."""
+    if args_cli.decimation is None:
+        return
+    if args_cli.decimation <= 0:
+        raise ValueError(f"Decimation must be a positive integer, got {args_cli.decimation}.")
+
+    env_cfg.decimation = args_cli.decimation
+
+    # Keep the project defaults that were previously selected in DeltoWalnutEnvCfg.
+    if hasattr(env_cfg, "episode_length_s"):
+        if env_cfg.decimation in (2, 4):
+            env_cfg.episode_length_s = 10.0
+        elif env_cfg.decimation == 8:
+            env_cfg.episode_length_s = 20.0
+
+    control_hz = 1.0 / (env_cfg.sim.dt * env_cfg.decimation)
+    print(f"[INFO] Environment decimation: {env_cfg.decimation} ({control_hz:.1f} Hz)")
+
+
 @hydra_task_config(args_cli.task, args_cli.agent)
 def main(
     env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg,
@@ -154,6 +180,7 @@ def main(
     # note: certain randomizations occur in the environment initialization so we set the seed here
     env_cfg.seed = agent_cfg.seed
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+    _apply_decimation_override(env_cfg)
 
     # multi-gpu training configuration
     if args_cli.distributed:

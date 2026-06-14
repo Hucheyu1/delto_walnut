@@ -11,3 +11,13 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PPORunnerCfg",
     },
 )
+
+gym.register(
+    id="Template-Delto-Walnut-Direct-v1",
+    entry_point=f"{__name__}.delto_walnut_hcy_collision_env:DeltoWalnutCollisionEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.delto_walnut_hcy_collision_env_cfg:DeltoWalnutCollisionEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PPORunnerCfg",
+    },
+)

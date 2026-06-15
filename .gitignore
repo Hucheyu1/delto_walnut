@@ -70,4 +70,5 @@ tests/
 # Docker history
 .isaac-lab-docker-history
 
-model_*.pt
+# model_*.pt
+exported/

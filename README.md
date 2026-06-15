@@ -106,6 +106,49 @@ python scripts/rsl_rl/play.py --task Template-Delto-Walnut-Direct-v0 --num_envs 
 python scripts/rsl_rl/play.py --task Template-Delto-Walnut-Direct-v0 --num_envs 1 --video --video_length 500 --headless
 ```
 
+### 蒸馏训练
+teacher-student 蒸馏，用已有 79 维 teacher checkpoint
+```bash
+python scripts/rsl_rl/train.py \
+  --task Template-Delto-Walnut-Direct-v2 \
+  --agent rsl_rl_distill_cfg_entry_point \
+  --headless \
+  --load_run 2026-06-12_23-13-39 \
+  --checkpoint model_1999.pt \
+  --decimation 2 \
+  --run_name distill_60hz
+```
+
+从头开始训练reduced actor，不对称 PPO：actor 看 53 维，critic 看 79 维
+```bash
+python scripts/rsl_rl/train.py \
+  --task Template-Delto-Walnut-Direct-v2 \
+  --decimation 2 \
+  --headless
+```
+
+### 播放与导出策略
+测试蒸馏出来的 student 模型，这个要加 --agent
+```bash
+python scripts/rsl_rl/play.py \
+  --task Template-Delto-Walnut-Direct-v2 \
+  --agent rsl_rl_distill_cfg_entry_point \
+  --num_envs 1 \
+  --decimation 2 \
+  --checkpoint /root/gpufree-data/lab_lecture/delto_walnut_hcy/logs/rsl_rl/delto_walnut/你的distill训练目录/model_1999.pt \
+  --headless
+```
+测试 v2 用 PPO 重新训练出来的模型
+```bash
+python scripts/rsl_rl/play.py \
+  --task Template-Delto-Walnut-Direct-v2 \
+  --num_envs 1 \
+  --decimation 2 \
+  --video \
+  --video_length 500 \
+  --headless \
+  --checkpoint /root/gpufree-data/lab_lecture/delto_walnut_hcy/logs/rsl_rl/delto_walnut/你的v2训练目录/model_1999.pt
+```
 ## 代码格式化
 
 项目包含 Ruff 与 pre-commit 配置。安装并运行：

@@ -1,0 +1,38 @@
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/__init__.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	logs/rsl_rl/delto_walnut/2026-06-15_19-44-22_distill_60hz/
+	source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/agents/rsl_rl_distill_cfg.py
+	source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/delto_walnut_hcy_distill_env.py
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/__init__.py b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/__init__.py
+index 0d80e99..4819305 100644
+--- a/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/__init__.py
++++ b/source/delto_walnut_hcy/delto_walnut_hcy/tasks/direct/delto_walnut_hcy/__init__.py
+@@ -21,3 +21,14 @@ gym.register(
+         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PPORunnerCfg",
+     },
+ )
++
++gym.register(
++    id="Template-Delto-Walnut-Direct-v2",
++    entry_point=f"{__name__}.delto_walnut_hcy_distill_env:DeltoWalnutDistillEnv",
++    disable_env_checker=True,
++    kwargs={
++        "env_cfg_entry_point": f"{__name__}.delto_walnut_hcy_distill_env:DeltoWalnutDistillEnvCfg",
++        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PPORunnerCfg",
++        "rsl_rl_distill_cfg_entry_point": f"{agents.__name__}.rsl_rl_distill_cfg:DistillRunnerCfg",
++    },
++)

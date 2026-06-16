@@ -32,3 +32,14 @@ gym.register(
         "rsl_rl_distill_cfg_entry_point": f"{agents.__name__}.rsl_rl_distill_cfg:DistillRunnerCfg",
     },
 )
+
+gym.register(
+    id="Template-Delto-Walnut-Yolo-Direct-v0",
+    entry_point=f"{__name__}.delto_walnut_hcy_yolo_distill_env:DeltoWalnutYoloDistillEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.delto_walnut_hcy_yolo_distill_env:DeltoWalnutYoloDistillEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PPORunnerCfg",
+        "rsl_rl_distill_cfg_entry_point": f"{agents.__name__}.rsl_rl_distill_cfg:DistillRunnerCfg",
+    },
+)

@@ -1,0 +1,37 @@
+python scripts/rsl_rl/train.py \
+  --task Template-Delto-Walnut-Yolo-Direct-v0 \
+  --num_envs 64 \
+  --decimation 8 \
+  --enable_cameras
+
+  python scripts/rsl_rl/train.py \
+  --task Template-Delto-Walnut-Yolo-Direct-v0 \
+  --agent rsl_rl_distill_cfg_entry_point \
+  --load_run 2026-06-12_23-13-39 \
+  --checkpoint model_1999.pt \
+  --decimation 2 \
+  --enable_cameras \
+  --run_name yolo_distill_60hz
+
+  python scripts/rsl_rl/play.py \
+  --task Template-Delto-Walnut-Yolo-Direct-v0 \
+  --num_envs 1 \
+  --decimation 8 \
+  --enable_cameras \
+  --checkpoint /root/gpufree-data/lab_lecture/delto_walnut_hcy/logs/rsl_rl/delto_walnut/你的训练目录/model_1999.pt
+
+  python scripts/train_real_action_policy.py \
+  --data data \
+  --output_dir logs/real_action_policy/0615_bc \
+  --epochs 500 \
+  --batch_size 256 \
+  --device cuda:0
+
+  python scripts/train_real_action_policy.py \
+  --data data \
+  --output_dir logs/real_action_policy/real_yolo_tactile_bc \
+  --tactile_keys tactile \
+  --target_mode delta_target_pos \
+  --epochs 500 \
+  --batch_size 256 \
+  --device cuda:0

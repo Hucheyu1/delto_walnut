@@ -242,6 +242,8 @@ def main(
         if args_cli.real_time and sleep_time > 0:
             time.sleep(sleep_time)
 
+    if hasattr(env.unwrapped, "recorder"):
+        env.unwrapped.recorder.save_final()
     # close the simulator
     env.close()
 

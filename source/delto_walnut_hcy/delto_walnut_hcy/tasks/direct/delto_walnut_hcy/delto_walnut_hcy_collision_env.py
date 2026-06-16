@@ -17,12 +17,12 @@ from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from pxr import UsdPhysics  # type: ignore
 
 from .data_recorder import DataRecorder
-from .delto_walnut_hcy_env_cfg import DeltoWalnutEnvCfg
+from .delto_walnut_hcy_collision_env_cfg import DeltoWalnutCollisionEnvCfg
 
 np.set_printoptions(precision=3, suppress=True)  # print禁用科学计数法，保留3位小数
 
 
-class DeltoWalnutEnv(DirectRLEnv):
+class DeltoWalnutCollisionEnv(DirectRLEnv):
     """
     DeltoWalnutEnv 是一个强化学习环境，用于控制机械手抓取并旋转两个坚果球。
 
@@ -33,9 +33,9 @@ class DeltoWalnutEnv(DirectRLEnv):
         cfg: 环境配置对象，包含机器人、球体等配置参数
     """
 
-    cfg: DeltoWalnutEnvCfg
+    cfg: DeltoWalnutCollisionEnvCfg
 
-    def __init__(self, cfg: DeltoWalnutEnvCfg, render_mode: str | None = None, **kwargs):
+    def __init__(self, cfg: DeltoWalnutCollisionEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
 
         self.global_env_step = 0
@@ -117,19 +117,19 @@ class DeltoWalnutEnv(DirectRLEnv):
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
         # add contact sensors
-        for name in self.cfg.ft_names:
+        for name in self.cfg.collision_sensor_names:
             self.scene.sensors[name] = ContactSensor(self.cfg.contact_sensors[name])
         # -------- 底层物理碰撞过滤 --------
-        for i in range(self.num_envs):
-            path_ball1 = f"/World/envs/env_{i}/ball1"
-            path_ball2 = f"/World/envs/env_{i}/ball2"
+        for env_id in range(self.num_envs):
+            path_ball1 = f"/World/envs/env_{env_id}/ball1"
+            path_ball2 = f"/World/envs/env_{env_id}/ball2"
             # 获取指尖 (r1c_sphere 到 r5c_sphere) 的 USD 路径
             finger_ball_path = list()
-            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r1c_sphere")
-            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r2c_sphere")
-            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r3c_sphere")
-            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r4c_sphere")
-            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r5c_sphere")
+            finger_ball_path.append(f"/World/envs/env_{env_id}/Robot/r1c_sphere")
+            finger_ball_path.append(f"/World/envs/env_{env_id}/Robot/r2c_sphere")
+            finger_ball_path.append(f"/World/envs/env_{env_id}/Robot/r3c_sphere")
+            finger_ball_path.append(f"/World/envs/env_{env_id}/Robot/r4c_sphere")
+            finger_ball_path.append(f"/World/envs/env_{env_id}/Robot/r5c_sphere")
             prim_ball1 = self.sim.stage.GetPrimAtPath(path_ball1)
             prim_ball2 = self.sim.stage.GetPrimAtPath(path_ball2)
             # print(f"prim_ball1: {prim_ball1}")
@@ -141,9 +141,21 @@ class DeltoWalnutEnv(DirectRLEnv):
                 ball2_api = UsdPhysics.FilteredPairsAPI.Apply(prim_ball2)
                 ball1_rel = ball1_api.CreateFilteredPairsRel()
                 ball2_rel = ball2_api.CreateFilteredPairsRel()
-                for i in range(len(finger_ball_path)):
-                    ball1_rel.AddTarget(finger_ball_path[i])
-                    ball2_rel.AddTarget(finger_ball_path[i])
+                for finger_path in finger_ball_path:
+                    ball1_rel.AddTarget(finger_path)
+                    ball2_rel.AddTarget(finger_path)
+
+            # 同一手指相邻 link 的碰撞属于结构邻接干涉，直接在 PhysX 层过滤。
+            for link_a, link_b in self.cfg.adjacent_link_collision_filter_pairs:
+                path_a = f"/World/envs/env_{env_id}/Robot/{link_a}"
+                path_b = f"/World/envs/env_{env_id}/Robot/{link_b}"
+                prim_a = self.sim.stage.GetPrimAtPath(path_a)
+                prim_b = self.sim.stage.GetPrimAtPath(path_b)
+                if prim_a.IsValid() and prim_b.IsValid():
+                    rel_a = UsdPhysics.FilteredPairsAPI.Apply(prim_a).CreateFilteredPairsRel()
+                    rel_b = UsdPhysics.FilteredPairsAPI.Apply(prim_b).CreateFilteredPairsRel()
+                    rel_a.AddTarget(path_b)
+                    rel_b.AddTarget(path_a)
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self.global_env_step += 1
@@ -286,7 +298,7 @@ class DeltoWalnutEnv(DirectRLEnv):
                 "axis": 0.5 * 10e-2,
                 "smooth": 0.5 * 10e-6,
                 "torque": 1.0 * 10e-4,
-                "collision": 1.0 * 10e-5,
+                "collision": 5.0e-4,
             }
 
         # RSL-RL 中一次 policy iteration 大约对应 num_steps_per_env 个 env step
@@ -311,8 +323,8 @@ class DeltoWalnutEnv(DirectRLEnv):
         w_smooth = 0.5 * 10e-6
         w_torque = 1.0 * 10e-4
 
-        # 碰撞奖励前期关闭，后期逐渐打开
-        w_collision = q * 10e-5
+        # 手指自碰撞从一开始就轻微惩罚，后期增强，避免先学会“互相顶住”再难以改掉。
+        w_collision = (0.25 + 0.75 * q) * 5.0e-4
 
         return {
             "rot": w_rot,
@@ -453,14 +465,14 @@ class DeltoWalnutEnv(DirectRLEnv):
         r_torque = -cur_w["torque"] * penalty
 
         # ---------------- 10. 指间碰撞惩罚 ----------------
-        collision_penalty = torch.zeros(self.num_envs, 1, device=self.device)
-        for name in self.cfg.ft_names:
+        collision_penalty = torch.zeros(self.num_envs, device=self.device)
+        for name in self.cfg.collision_sensor_names:
             force_data = self.scene.sensors[name].data.net_forces_w  # [num_envs, 1, 3]
             force_norm = torch.linalg.norm(force_data, dim=-1)  # [num_envs, 1]
-            collision_penalty += force_norm  # [num_envs, 1]
+            collision_penalty += force_norm.squeeze(-1)  # [num_envs]
             # print(f"{name}: {force_norm}")
             # print(f"{name}: {force_norm.shape}")
-        collision_penalty = collision_penalty.sum(dim=-1)
+        collision_penalty = 0.5 * collision_penalty  # 接触通常会被两个 link 的传感器各统计一次
         # print(f"{name}: {collision_penalty.shape}")
         r_collision = -cur_w["collision"] * collision_penalty
 

@@ -16,6 +16,7 @@ from isaaclab.sensors import ContactSensor
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from pxr import UsdPhysics  # type: ignore
 
+from .data_recorder import DataRecorder
 from .delto_walnut_hcy_env_cfg import DeltoWalnutEnvCfg
 
 np.set_printoptions(precision=3, suppress=True)  # print禁用科学计数法，保留3位小数
@@ -90,14 +91,11 @@ class DeltoWalnutEnv(DirectRLEnv):
         }
 
         print(f"max_episode_length: {self.max_episode_length}")
-        self.pt_ct = 0
-
-        # self.data = dict()
-        # self.data['frame'] = list()
-        # self.data['actions'] = list()
-        # self.data['target_pos'] = list()
-        # self.data['obs_joint_pos'] = list()
-        self.reset_count = 0
+        self.recorder = DataRecorder(
+            save_dir=getattr(cfg, "record_save_dir", "/home/amlrobotics/hcy_ws/delto_walnut_hcy/data"),
+            prefix=getattr(cfg, "record_prefix", "data_0615"),
+            enable=bool(getattr(cfg, "record_data", False)),
+        )
 
     def _setup_scene(self):
         # 实例化机器人和两个球体
@@ -150,7 +148,6 @@ class DeltoWalnutEnv(DirectRLEnv):
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self.global_env_step += 1
 
-        # self.data['actions'].append(actions.tolist())
         # 先保存旧动作
         self.raw_prev_actions.copy_(self.raw_actions)
         # 再更新当前动作
@@ -163,8 +160,6 @@ class DeltoWalnutEnv(DirectRLEnv):
     def _apply_action(self) -> None:
         # 将最终算出的目标位置下发给机器人的 PD 控制器
         self.robot.set_joint_position_target(self.target_pos, joint_ids=self.robot_joint_ids)
-        # self.data['frame'].append(self.episode_length_buf.tolist())
-        # self.data['target_pos'].append(self.target_pos.tolist())
 
     def _get_observations(self) -> dict:
         # ---------------- robot 获取关节真实物理位置和速度----------------
@@ -204,31 +199,27 @@ class DeltoWalnutEnv(DirectRLEnv):
             ],
             dim=-1,
         )
-        # self.data['obs_joint_pos'].append(joint_pos.tolist())
+        self.recorder.record(
+            frame=self.episode_length_buf,
+            actions=self.raw_actions,
+            target_pos=self.target_pos,
+            obs_joint_pos=joint_pos,
+            ball1_pos=ball1_pos,
+            ball2_pos=ball2_pos,
+        )
         return {"policy": obs}
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
-        # self.pt_ct += 1
         obj_ball1_z = self.ball1.data.root_pos_w[:, 2]
         obj_ball2_z = self.ball2.data.root_pos_w[:, 2]
         terminated = (obj_ball1_z < self.cfg.drop_height_threshold) | (obj_ball2_z < self.cfg.drop_height_threshold)
         truncated = self.episode_length_buf >= (self.max_episode_length - 1)
-        # if self.pt_ct == 10:
-        #     print("run time:",self.episode_length_buf[0], self.max_episode_length)
-        #     self.pt_ct = 0
         return terminated, truncated
 
     # 在仿真环境每次重置时，将当前环境状态保存到文件中，并重置各种状态变量、关节位置、机器人和球体的位姿等
     def _reset_idx(self, env_ids: Sequence[int] | None):
-        # with open('/home/amlrobotics/hcy_ws/record_data/data_0528_' + str(self.reset_count) + '.pkl', 'wb') as file:
-        #     pickle.dump(self.data, file)
-        #     self.reset_count += 1
-        #     for key in self.data:
-        #         self.data[key].clear()
+        self.recorder.save_and_reset()
 
-        self.reset_count += 1
-        # for key in self.data:
-        #     self.data[key].clear()
         if env_ids is None:
             env_ids = self.robot._ALL_INDICES  # type: ignore
         super()._reset_idx(env_ids)
@@ -406,9 +397,7 @@ class DeltoWalnutEnv(DirectRLEnv):
         # 速度太小时不奖励“方向正确”，避免低频策略停在几乎不转的局部最优。
         speed_gate1 = 1.0 - torch.exp(-((norm_vel1 / self.cfg.speed_kernel_sigma) ** 2))
         speed_gate2 = 1.0 - torch.exp(-((norm_vel2 / self.cfg.speed_kernel_sigma) ** 2))
-        rew_axis = speed_gate1 * (v1_norm * desired_v1).sum(dim=-1) + speed_gate2 * (
-            v2_norm * desired_v2
-        ).sum(dim=-1)
+        rew_axis = speed_gate1 * (v1_norm * desired_v1).sum(dim=-1) + speed_gate2 * (v2_norm * desired_v2).sum(dim=-1)
         r_axis = cur_w["axis"] * rew_axis
 
         # ---------------- 6. 掉落惩罚 ----------------

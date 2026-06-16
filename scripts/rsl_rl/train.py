@@ -117,6 +117,7 @@ if args_cli.distributed and version.parse(installed_version) < version.parse(RSL
 import os
 from datetime import datetime
 
+import delto_walnut_hcy.tasks  # noqa: F401
 import gymnasium as gym
 import isaaclab_tasks  # noqa: F401
 import omni
@@ -134,8 +135,6 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
 from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
 from rsl_rl.runners import OnPolicyRunner
-
-import delto_walnut_hcy.tasks  # noqa: F401
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -212,7 +211,8 @@ def main(
         omni.log.warn(
             "IO descriptors are only supported for manager based RL environments. No IO descriptors will be exported."
         )
-
+    env_cfg.log_dir = log_dir
+    env_cfg.record_data = False
     # create isaac environment
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
 

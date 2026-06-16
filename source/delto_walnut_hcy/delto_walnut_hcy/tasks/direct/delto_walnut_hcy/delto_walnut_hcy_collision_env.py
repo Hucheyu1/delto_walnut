@@ -16,12 +16,13 @@ from isaaclab.sensors import ContactSensor
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from pxr import UsdPhysics  # type: ignore
 
-from .delto_walnut_hcy_collision_env_cfg import DeltoWalnutCollisionEnvCfg
+from .data_recorder import DataRecorder
+from .delto_walnut_hcy_env_cfg import DeltoWalnutEnvCfg
 
 np.set_printoptions(precision=3, suppress=True)  # print禁用科学计数法，保留3位小数
 
 
-class DeltoWalnutCollisionEnv(DirectRLEnv):
+class DeltoWalnutEnv(DirectRLEnv):
     """
     DeltoWalnutEnv 是一个强化学习环境，用于控制机械手抓取并旋转两个坚果球。
 
@@ -32,9 +33,9 @@ class DeltoWalnutCollisionEnv(DirectRLEnv):
         cfg: 环境配置对象，包含机器人、球体等配置参数
     """
 
-    cfg: DeltoWalnutCollisionEnvCfg
+    cfg: DeltoWalnutEnvCfg
 
-    def __init__(self, cfg: DeltoWalnutCollisionEnvCfg, render_mode: str | None = None, **kwargs):
+    def __init__(self, cfg: DeltoWalnutEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
 
         self.global_env_step = 0
@@ -90,14 +91,11 @@ class DeltoWalnutCollisionEnv(DirectRLEnv):
         }
 
         print(f"max_episode_length: {self.max_episode_length}")
-        self.pt_ct = 0
-
-        # self.data = dict()
-        # self.data['frame'] = list()
-        # self.data['actions'] = list()
-        # self.data['target_pos'] = list()
-        # self.data['obs_joint_pos'] = list()
-        self.reset_count = 0
+        self.recorder = DataRecorder(
+            save_dir=getattr(cfg, "record_save_dir", "/home/amlrobotics/hcy_ws/delto_walnut_hcy/data"),
+            prefix=getattr(cfg, "record_prefix", "data_0615"),
+            enable=bool(getattr(cfg, "record_data", False)),
+        )
 
     def _setup_scene(self):
         # 实例化机器人和两个球体
@@ -119,19 +117,19 @@ class DeltoWalnutCollisionEnv(DirectRLEnv):
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
         # add contact sensors
-        for name in self.cfg.collision_sensor_names:
+        for name in self.cfg.ft_names:
             self.scene.sensors[name] = ContactSensor(self.cfg.contact_sensors[name])
         # -------- 底层物理碰撞过滤 --------
-        for env_id in range(self.num_envs):
-            path_ball1 = f"/World/envs/env_{env_id}/ball1"
-            path_ball2 = f"/World/envs/env_{env_id}/ball2"
+        for i in range(self.num_envs):
+            path_ball1 = f"/World/envs/env_{i}/ball1"
+            path_ball2 = f"/World/envs/env_{i}/ball2"
             # 获取指尖 (r1c_sphere 到 r5c_sphere) 的 USD 路径
             finger_ball_path = list()
-            finger_ball_path.append(f"/World/envs/env_{env_id}/Robot/r1c_sphere")
-            finger_ball_path.append(f"/World/envs/env_{env_id}/Robot/r2c_sphere")
-            finger_ball_path.append(f"/World/envs/env_{env_id}/Robot/r3c_sphere")
-            finger_ball_path.append(f"/World/envs/env_{env_id}/Robot/r4c_sphere")
-            finger_ball_path.append(f"/World/envs/env_{env_id}/Robot/r5c_sphere")
+            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r1c_sphere")
+            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r2c_sphere")
+            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r3c_sphere")
+            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r4c_sphere")
+            finger_ball_path.append(f"/World/envs/env_{i}/Robot/r5c_sphere")
             prim_ball1 = self.sim.stage.GetPrimAtPath(path_ball1)
             prim_ball2 = self.sim.stage.GetPrimAtPath(path_ball2)
             # print(f"prim_ball1: {prim_ball1}")
@@ -143,26 +141,13 @@ class DeltoWalnutCollisionEnv(DirectRLEnv):
                 ball2_api = UsdPhysics.FilteredPairsAPI.Apply(prim_ball2)
                 ball1_rel = ball1_api.CreateFilteredPairsRel()
                 ball2_rel = ball2_api.CreateFilteredPairsRel()
-                for finger_path in finger_ball_path:
-                    ball1_rel.AddTarget(finger_path)
-                    ball2_rel.AddTarget(finger_path)
-
-            # 同一手指相邻 link 的碰撞属于结构邻接干涉，直接在 PhysX 层过滤。
-            for link_a, link_b in self.cfg.adjacent_link_collision_filter_pairs:
-                path_a = f"/World/envs/env_{env_id}/Robot/{link_a}"
-                path_b = f"/World/envs/env_{env_id}/Robot/{link_b}"
-                prim_a = self.sim.stage.GetPrimAtPath(path_a)
-                prim_b = self.sim.stage.GetPrimAtPath(path_b)
-                if prim_a.IsValid() and prim_b.IsValid():
-                    rel_a = UsdPhysics.FilteredPairsAPI.Apply(prim_a).CreateFilteredPairsRel()
-                    rel_b = UsdPhysics.FilteredPairsAPI.Apply(prim_b).CreateFilteredPairsRel()
-                    rel_a.AddTarget(path_b)
-                    rel_b.AddTarget(path_a)
+                for i in range(len(finger_ball_path)):
+                    ball1_rel.AddTarget(finger_ball_path[i])
+                    ball2_rel.AddTarget(finger_ball_path[i])
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self.global_env_step += 1
 
-        # self.data['actions'].append(actions.tolist())
         # 先保存旧动作
         self.raw_prev_actions.copy_(self.raw_actions)
         # 再更新当前动作
@@ -175,8 +160,6 @@ class DeltoWalnutCollisionEnv(DirectRLEnv):
     def _apply_action(self) -> None:
         # 将最终算出的目标位置下发给机器人的 PD 控制器
         self.robot.set_joint_position_target(self.target_pos, joint_ids=self.robot_joint_ids)
-        # self.data['frame'].append(self.episode_length_buf.tolist())
-        # self.data['target_pos'].append(self.target_pos.tolist())
 
     def _get_observations(self) -> dict:
         # ---------------- robot 获取关节真实物理位置和速度----------------
@@ -216,31 +199,27 @@ class DeltoWalnutCollisionEnv(DirectRLEnv):
             ],
             dim=-1,
         )
-        # self.data['obs_joint_pos'].append(joint_pos.tolist())
+        self.recorder.record(
+            frame=self.episode_length_buf,
+            actions=self.raw_actions,
+            target_pos=self.target_pos,
+            obs_joint_pos=joint_pos,
+            ball1_pos=ball1_pos,
+            ball2_pos=ball2_pos,
+        )
         return {"policy": obs}
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
-        # self.pt_ct += 1
         obj_ball1_z = self.ball1.data.root_pos_w[:, 2]
         obj_ball2_z = self.ball2.data.root_pos_w[:, 2]
         terminated = (obj_ball1_z < self.cfg.drop_height_threshold) | (obj_ball2_z < self.cfg.drop_height_threshold)
         truncated = self.episode_length_buf >= (self.max_episode_length - 1)
-        # if self.pt_ct == 10:
-        #     print("run time:",self.episode_length_buf[0], self.max_episode_length)
-        #     self.pt_ct = 0
         return terminated, truncated
 
     # 在仿真环境每次重置时，将当前环境状态保存到文件中，并重置各种状态变量、关节位置、机器人和球体的位姿等
     def _reset_idx(self, env_ids: Sequence[int] | None):
-        # with open('/home/amlrobotics/hcy_ws/record_data/data_0528_' + str(self.reset_count) + '.pkl', 'wb') as file:
-        #     pickle.dump(self.data, file)
-        #     self.reset_count += 1
-        #     for key in self.data:
-        #         self.data[key].clear()
+        self.recorder.save_and_reset()
 
-        self.reset_count += 1
-        # for key in self.data:
-        #     self.data[key].clear()
         if env_ids is None:
             env_ids = self.robot._ALL_INDICES  # type: ignore
         super()._reset_idx(env_ids)
@@ -307,7 +286,7 @@ class DeltoWalnutCollisionEnv(DirectRLEnv):
                 "axis": 0.5 * 10e-2,
                 "smooth": 0.5 * 10e-6,
                 "torque": 1.0 * 10e-4,
-                "collision": 5.0e-4,
+                "collision": 1.0 * 10e-5,
             }
 
         # RSL-RL 中一次 policy iteration 大约对应 num_steps_per_env 个 env step
@@ -332,8 +311,8 @@ class DeltoWalnutCollisionEnv(DirectRLEnv):
         w_smooth = 0.5 * 10e-6
         w_torque = 1.0 * 10e-4
 
-        # 手指自碰撞从一开始就轻微惩罚，后期增强，避免先学会“互相顶住”再难以改掉。
-        w_collision = (0.25 + 0.75 * q) * 5.0e-4
+        # 碰撞奖励前期关闭，后期逐渐打开
+        w_collision = q * 10e-5
 
         return {
             "rot": w_rot,
@@ -418,9 +397,7 @@ class DeltoWalnutCollisionEnv(DirectRLEnv):
         # 速度太小时不奖励“方向正确”，避免低频策略停在几乎不转的局部最优。
         speed_gate1 = 1.0 - torch.exp(-((norm_vel1 / self.cfg.speed_kernel_sigma) ** 2))
         speed_gate2 = 1.0 - torch.exp(-((norm_vel2 / self.cfg.speed_kernel_sigma) ** 2))
-        rew_axis = speed_gate1 * (v1_norm * desired_v1).sum(dim=-1) + speed_gate2 * (
-            v2_norm * desired_v2
-        ).sum(dim=-1)
+        rew_axis = speed_gate1 * (v1_norm * desired_v1).sum(dim=-1) + speed_gate2 * (v2_norm * desired_v2).sum(dim=-1)
         r_axis = cur_w["axis"] * rew_axis
 
         # ---------------- 6. 掉落惩罚 ----------------
@@ -476,14 +453,14 @@ class DeltoWalnutCollisionEnv(DirectRLEnv):
         r_torque = -cur_w["torque"] * penalty
 
         # ---------------- 10. 指间碰撞惩罚 ----------------
-        collision_penalty = torch.zeros(self.num_envs, device=self.device)
-        for name in self.cfg.collision_sensor_names:
+        collision_penalty = torch.zeros(self.num_envs, 1, device=self.device)
+        for name in self.cfg.ft_names:
             force_data = self.scene.sensors[name].data.net_forces_w  # [num_envs, 1, 3]
             force_norm = torch.linalg.norm(force_data, dim=-1)  # [num_envs, 1]
-            collision_penalty += force_norm.squeeze(-1)  # [num_envs]
+            collision_penalty += force_norm  # [num_envs, 1]
             # print(f"{name}: {force_norm}")
             # print(f"{name}: {force_norm.shape}")
-        collision_penalty = 0.5 * collision_penalty  # 接触通常会被两个 link 的传感器各统计一次
+        collision_penalty = collision_penalty.sum(dim=-1)
         # print(f"{name}: {collision_penalty.shape}")
         r_collision = -cur_w["collision"] * collision_penalty
 

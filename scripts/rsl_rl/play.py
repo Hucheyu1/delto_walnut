@@ -78,6 +78,7 @@ simulation_app = app_launcher.app
 import os
 import time
 
+import delto_walnut_hcy.tasks  # noqa: F401
 import gymnasium as gym
 import isaaclab_tasks  # noqa: F401
 import torch
@@ -100,8 +101,6 @@ from isaaclab_rl.rsl_rl import (
 from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
 from rsl_rl.runners import OnPolicyRunner
-
-import delto_walnut_hcy.tasks  # noqa: F401
 
 
 def _apply_decimation_override(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg):
@@ -160,6 +159,10 @@ def main(
 
     log_dir = os.path.dirname(resume_path)
 
+    env_cfg.log_dir = log_dir
+    env_cfg.record_data = True
+    env_cfg.fps = int(round(120 / env_cfg.decimation))
+    env_cfg.record_prefix = f"data_0615_{env_cfg.fps}HZ"
     # create isaac environment
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
 

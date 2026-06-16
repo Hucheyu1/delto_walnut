@@ -19,6 +19,11 @@ from .delto_cfg import TESOLLO_CFG
 class DeltoWalnutEnvCfg(DirectRLEnvCfg):
     # 环境配置参数（已经集成到命令行参数中）
     decimation = 8  # 环境决策频率，控制仿真步长
+    fps = int(round(120 / decimation))
+    # 是否记录数据：训练默认 False，play 时手动改 True
+    record_data: bool = False
+    record_save_dir: str = "/root/gpufree-data/lab_lecture/delto_walnut_hcy/data"
+    record_prefix: str = f"data_0615_{fps}HZ"
     if decimation == 2:
         action_scale = 0.5
         episode_length_s = 10.0  # 每个episode的持续时间（秒）

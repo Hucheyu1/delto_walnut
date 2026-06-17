@@ -20,18 +20,16 @@ python scripts/rsl_rl/train.py \
   --enable_cameras \
   --checkpoint /root/gpufree-data/lab_lecture/delto_walnut_hcy/logs/rsl_rl/delto_walnut/你的训练目录/model_1999.pt
 
-  python scripts/train_real_action_policy.py \
-  --data data \
-  --output_dir logs/real_action_policy/0615_bc \
-  --epochs 500 \
-  --batch_size 256 \
-  --device cuda:0
+  python3 train_supervised_action_from_csv.py \
+      --csv /home/amlrobotics/hcy_ws/delto_walnut_hcy/data/replay_data_0615_30HZ_1/replay_data_0615_30HZ_1.csv \
+      --output_dir /home/amlrobotics/hcy_ws/delto_walnut_hcy/logs/supervised_action_policy \
+      --target_mode actions \
+      --epochs 300 \
+      --batch_size 512 \
+      --device cuda:0
 
-  python scripts/train_real_action_policy.py \
-  --data data \
-  --output_dir logs/real_action_policy/real_yolo_tactile_bc \
-  --tactile_keys tactile \
-  --target_mode delta_target_pos \
-  --epochs 500 \
-  --batch_size 256 \
-  --device cuda:0
+  python3 test_supervised_policy_on_csv.py \
+      --csv /home/amlrobotics/hcy_ws/delto_walnut_hcy/data/replay_data_0615_30HZ_1/replay_data_0615_30HZ_1.csv \
+      --policy /home/amlrobotics/hcy_ws/delto_walnut_hcy/logs/supervised_action_policy/supervised_action_policy_jit.pt \
+      --num_samples 100 \
+      --save_result /home/amlrobotics/hcy_ws/delto_walnut_hcy/logs/supervised_action_policy/test_result.csv

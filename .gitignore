@@ -72,3 +72,4 @@ tests/
 
 # model_*.pt
 exported/
+example.csv

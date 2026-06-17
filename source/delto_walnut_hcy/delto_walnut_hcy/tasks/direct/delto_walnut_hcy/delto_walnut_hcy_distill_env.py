@@ -10,7 +10,15 @@ from isaaclab.utils import configclass
 
 from .delto_walnut_hcy_env import DeltoWalnutEnv
 from .delto_walnut_hcy_env_cfg import DeltoWalnutEnvCfg
+from .delto_walnut_hcy_collision_env import DeltoWalnutCollisionEnv
+from .delto_walnut_hcy_collision_env_cfg import DeltoWalnutCollisionEnvCfg
 
+# 版本 1：普通 curriculum env
+EnvCfg = DeltoWalnutEnvCfg
+Env = DeltoWalnutEnv
+# 版本 2：collision env
+# EnvCfg = DeltoWalnutCollisionEnvCfg
+# Env = DeltoWalnutCollisionEnv
 
 @configclass
 class DeltoWalnutDistillEnvCfg(DeltoWalnutEnvCfg):

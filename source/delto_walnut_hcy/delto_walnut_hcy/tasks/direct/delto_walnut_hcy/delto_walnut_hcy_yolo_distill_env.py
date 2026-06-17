@@ -18,6 +18,9 @@ from pxr import UsdPhysics  # type: ignore
 
 from .delto_walnut_hcy_distill_env import DeltoWalnutDistillEnv, DeltoWalnutDistillEnvCfg
 
+import os
+import numpy as np
+from PIL import Image
 
 @configclass
 class DeltoWalnutYoloDistillEnvCfg(DeltoWalnutDistillEnvCfg):
@@ -27,13 +30,13 @@ class DeltoWalnutYoloDistillEnvCfg(DeltoWalnutDistillEnvCfg):
     #          + rot_axis(3) + rot_center(3) + ball_radius(1)
     observation_space = 51
     state_space = 79
-
+    # 在每个并行环境里创建一个相机
     tiled_camera: TiledCameraCfg = TiledCameraCfg(
         prim_path="/World/envs/env_.*/YoloCamera",
         # Approximate the viewer direction used for videos. Tune this after checking the first camera frame.
         offset=TiledCameraCfg.OffsetCfg(
             pos=(0.476, -0.006, 0.574),
-            rot=(0.3827, 0.0, 0.9239, 0.0),
+            rot=(0.0, 0.3827, 0.0, -0.9239),
             convention="world",
         ),
         data_types=["rgb"],
@@ -73,7 +76,7 @@ class DeltoWalnutYoloDistillEnv(DeltoWalnutDistillEnv):
 
     def __init__(self, cfg: DeltoWalnutYoloDistillEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
-
+        # 每个环境 2 个球，每个球 2 维 uv 坐标，归一化后的图像坐标
         self._last_ball_uv = torch.zeros(self.num_envs, 2, 2, device=self.device)
         self._last_ball_valid = torch.zeros(self.num_envs, 2, dtype=torch.bool, device=self.device)
         self._yolo_model = self._load_yolo_model()
@@ -83,7 +86,7 @@ class DeltoWalnutYoloDistillEnv(DeltoWalnutDistillEnv):
             return None
 
         try:
-            from ultralytics import YOLO
+            from ultralytics.models import YOLO
         except ImportError as exc:
             raise ImportError(
                 "DeltoWalnutYoloDistillEnv requires `ultralytics` when yolo_model_path is set. "
@@ -196,6 +199,10 @@ class DeltoWalnutYoloDistillEnv(DeltoWalnutDistillEnv):
             dim=-1,
         )
 
+        if not hasattr(self, "_debug_camera_saved"):
+            self._save_debug_camera_image()
+            self._debug_camera_saved = True
+
         if actor_obs.shape[-1] != self.cfg.observation_space:
             raise RuntimeError(
                 f"Actor observation dim mismatch: got {actor_obs.shape[-1]}, expected {self.cfg.observation_space}."
@@ -205,7 +212,7 @@ class DeltoWalnutYoloDistillEnv(DeltoWalnutDistillEnv):
                 f"Critic observation dim mismatch: got {critic_obs.shape[-1]}, expected {self.cfg.state_space}."
             )
 
-        return {"policy": actor_obs, "critic": critic_obs, "teacher": critic_obs}
+        return {"policy": actor_obs, "student": actor_obs, "critic": critic_obs, "teacher": critic_obs}
 
     def _detect_ball_uv(self) -> torch.Tensor:
         rgb = self._tiled_camera.data.output["rgb"]
@@ -226,7 +233,7 @@ class DeltoWalnutYoloDistillEnv(DeltoWalnutDistillEnv):
     def _detect_ball_uv_with_yolo(self, rgb: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         height, width = rgb.shape[1], rgb.shape[2]
         images = [image for image in rgb.detach().cpu().numpy()]
-        results = self._yolo_model.predict(images, verbose=False, conf=float(self.cfg.yolo_conf_threshold))
+        results = self._yolo_model.predict(images, verbose=False, conf=float(self.cfg.yolo_conf_threshold)) # type: ignore
 
         uv = self._last_ball_uv.clone()
         valid = torch.zeros(self.num_envs, 2, dtype=torch.bool, device=self.device)
@@ -304,7 +311,8 @@ class DeltoWalnutYoloDistillEnv(DeltoWalnutDistillEnv):
             assigned_uv, assigned_valid = self._assign_detections(env_id, centers_uv)
             uv[env_id] = assigned_uv
             valid[env_id] = assigned_valid
-
+            # print(centers_px)
+            # print(assigned_uv)
         return uv, valid
 
     def _normalize_pixel_centers(self, centers_px: torch.Tensor, width: int, height: int) -> torch.Tensor:
@@ -347,24 +355,24 @@ class DeltoWalnutYoloDistillEnv(DeltoWalnutDistillEnv):
         valid[:] = True
         return assigned, valid
 
+    def _save_debug_camera_image(self, path="/home/amlrobotics/hcy_ws/delto_walnut_hcy/data/yolo_camera_debug.png"):
+        rgb = self._tiled_camera.data.output["rgb"]
 
-def register_yolo_distill_task(task_id: str = "Template-Delto-Walnut-Yolo-Direct-v0") -> None:
-    """Register the YOLO-camera distillation environment when this module is imported manually."""
-    if task_id in gym.registry:
-        return
+        if rgb is None:
+            print("[Camera Debug] rgb is None")
+            return
 
-    module_name = __name__
-    package_name = module_name.rsplit(".", 1)[0]
-    gym.register(
-        id=task_id,
-        entry_point=f"{module_name}:DeltoWalnutYoloDistillEnv",
-        disable_env_checker=True,
-        kwargs={
-            "env_cfg_entry_point": f"{module_name}:DeltoWalnutYoloDistillEnvCfg",
-            "rsl_rl_cfg_entry_point": f"{package_name}.agents.rsl_rl_ppo_cfg:PPORunnerCfg",
-            "rsl_rl_distill_cfg_entry_point": f"{package_name}.agents.rsl_rl_distill_cfg:DistillRunnerCfg",
-        },
-    )
+        image = rgb[0].detach().cpu().numpy()
 
+        # 有些版本 rgb 是 float 0~1，有些是 uint8 0~255
+        if image.dtype != np.uint8:
+            image = np.clip(image, 0, 255)
+            if image.max() <= 1.0:
+                image = image * 255.0
+            image = image.astype(np.uint8)
 
-__all__ = ["DeltoWalnutYoloDistillEnv", "DeltoWalnutYoloDistillEnvCfg", "register_yolo_distill_task"]
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        Image.fromarray(image).save(path)
+
+        print(f"[Camera Debug] saved camera image to: {path}")
+

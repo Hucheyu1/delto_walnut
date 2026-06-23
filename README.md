@@ -149,6 +149,37 @@ python scripts/rsl_rl/play.py \
   --headless \
   --checkpoint /root/gpufree-data/lab_lecture/delto_walnut_hcy/logs/rsl_rl/delto_walnut/你的v2训练目录/model_1999.pt
 ```
+
+### 监督学习训练
+```bash
+python3 scripts/train_supervised_policy.py \
+    --obs_mode full \
+    --target_mode actions \
+    --epochs 800 \
+    --batch_size 512 \
+    --hidden_dims 512 256 128 \
+    --dropout 0.1 \
+    --weight_decay 1e-4 \
+    --val_ratio 0.2 \
+    --use_augmentation \
+    --use_history_stack \
+    --history_len 10
+``` 
+--target_mode actions: 表示学习 当前观测 + 上一帧动作 -> 当前记录动作
+--target_mode next_actions: 预测“下一帧动作”
+--target_mode next_joint_delta: 预测“下一帧关节角相对当前关节角的增量”
+
+### 监督学习测试
+```bash
+python scripts/test_supervised_policy_on_csv.py \
+    --csv /home/amlrobotics/hcy_ws/delto_walnut_hcy/data/replay_data_0615_30HZ_1/replay_data_0615_30HZ_1.csv \
+    --policy /home/amlrobotics/hcy_ws/delto_walnut_hcy/logs/supervised_action_policy/supervised_action_policy_jit.pt \
+    --num_samples 100 \
+    --save_result /home/amlrobotics/hcy_ws/delto_walnut_hcy/logs/supervised_action_policy/test_result.csv
+
+python scripts/test_supervised_policy.py --obs_mode no_vision --target_mode action_delta --use_history_stack --history_len 10
+```    
+
 ## 代码格式化
 
 项目包含 Ruff 与 pre-commit 配置。安装并运行：
